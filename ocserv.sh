@@ -46,6 +46,7 @@ install_deps(){
             echo -e "\033[33m[警告]\033[0m 未找到防火墙工具，正在安装..."
             dnf install -y iptables-services 2>/dev/null
             systemctl enable iptables 2>/dev/null
+            systemctl start iptables 2>/dev/null
         fi
         
     elif [[ "${release}" == "centos" ]]; then
@@ -169,9 +170,11 @@ config_firewall(){
         if command -v dnf &>/dev/null; then
             dnf install -y iptables-services 2>/dev/null
             systemctl enable iptables 2>/dev/null
+            systemctl start iptables 2>/dev/null
         elif command -v yum &>/dev/null; then
             yum install -y iptables-services 2>/dev/null
             chkconfig iptables on 2>/dev/null
+            service iptables start 2>/dev/null
         fi
     fi
     
