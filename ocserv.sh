@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.1.2"
+sh_ver="1.1.3"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -175,6 +175,8 @@ config_ocserv(){
 auth = "plain[${passwd_file}]"
 tcp-port = 443
 udp-port = 443
+socket-file = /var/run/ocserv.socket
+pid-file = /var/run/ocserv.pid
 server-cert = ${conf_file}/server-cert.pem
 server-key = ${conf_file}/server-key.pem
 device = vpns
