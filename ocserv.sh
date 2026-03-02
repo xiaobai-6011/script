@@ -12,8 +12,8 @@ fi
 log_file="/tmp/ocserv.log"
 PID_FILE="/var/run/ocserv.pid"
 conf_file="/etc/ocserv"
-conf="${conf_file}/ocserv.conf"
-passwd_file="${conf_file}/ocpasswd"
+conf="/etc/ocserv/ocserv.conf"
+passwd_file="/etc/ocserv/ocpasswd"
 
 # 检测系统
 detect_sys(){
@@ -53,16 +53,16 @@ install_deps(){
 # 配置
 config_ocserv(){
     echo "[信息] 配置 ocserv..."
-    mkdir -p ${conf_file}
+    mkdir -p /etc/ocserv
     
     cat > ${conf} << EOF
-auth = "plain[${passwd_file}]"
+auth = "plain[/etc/ocserv/ocpasswd]"
 tcp-port = 443
 udp-port = 443
 socket-file = /var/run/ocserv.socket
 pid-file = /var/run/ocserv.pid
-server-cert = ${conf_file}/server-cert.pem
-server-key = ${conf_file}/server-key.pem
+server-cert = /etc/ocserv/server-cert.pem
+server-key = /etc/ocserv/server-key.pem
 device = vpns
 ipv4-network = 172.16.0.0
 ipv4-netmask = 255.255.252.0
@@ -73,9 +73,9 @@ max-clients = 0
 EOF
     
     # 生成证书
-    if [[ ! -f "${conf_file}/server-cert.pem" ]]; then
+    if [[ ! -f "/etc/ocserv/server-cert.pem" ]]; then
         echo "[信息] 生成证书..."
-        cd ${conf_file}
+        cd /etc/ocserv
         openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=小白" 2>/dev/null
     fi
     
@@ -132,7 +132,7 @@ stop_ocserv(){
 add_user(){
     read -p "用户名: " u
     read -p "密码: " p
-    echo -e "${p}\n${p}" | ocpasswd -c ${passwd_file} $u 2>/dev/null
+    echo -e "${p}\n${p}" | ocpasswd -c /etc/ocserv/ocpasswd $u 2>/dev/null
     echo "[信息] 用户 $u 添加成功"
 }
 
