@@ -14,14 +14,24 @@ sh_ver="1.0.3"
 
 # 自动检测ocserv安装路径
 detect_ocserv(){
+	# 先用command -v查找
 	ocserv_path=$(command -v ocserv 2>/dev/null)
 	if [[ -z ${ocserv_path} ]]; then
+		# 遍历常见路径
 		for path in /usr/sbin/ocserv /usr/local/sbin/ocserv /usr/bin/ocserv /opt/ocserv/sbin/ocserv; do
 			if [[ -x ${path} ]]; then
 				ocserv_path=${path}
 				break
 			fi
 		done
+	fi
+	# 如果还没找到，尝试用which
+	if [[ -z ${ocserv_path} ]]; then
+		ocserv_path=$(which ocserv 2>/dev/null)
+	fi
+	# 还是没有就用rpm查找(CentOS)
+	if [[ -z ${ocserv_path} ]] && command -v rpm &>/dev/null; then
+		ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "sbin/ocserv$" | head -1)
 	fi
 	ocserv_path=${ocserv_path:-/usr/sbin/ocserv}
 }
@@ -206,15 +216,24 @@ Download_ocserv(){
 			apt-get update
 			apt-get install -y ocserv occtl 2>/dev/null
 			detect_ocserv
-			[[ -x ${ocserv_path} ]] && echo -e "${Info} ocserv 安装成功" && return 0
+			if [[ -x ${ocserv_path} ]]; then
+				echo -e "${Info} ocserv 安装成功"
+				return 0
+			fi
 		elif [[ ${release} == "centos" ]]; then
 			yum install -y epel-release 2>/dev/null || true
-			yum install -y ocserv 2>/dev/null
+			yum install -y ocserv 2>/dev/null || true
+			# 强制重新检测
 			detect_ocserv
-			[[ -x ${ocserv_path} ]] && echo -e "${Info} ocserv 安装成功" && return 0
+			# 如果还没找到，搜索所有ocserv相关文件
+			if [[ ! -x ${ocserv_path} ]] && command -v rpm &>/dev/null; then
+				ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "ocserv$" | head -1)
+			fi
+			if [[ -x ${ocserv_path} ]]; then
+				echo -e "${Info} ocserv 安装成功 (${ocserv_path})"
+				return 0
+			fi
 		fi
-		echo -e "${Error} ocserv 安装失败"
-		exit 1
 	fi
 	
 	tar -xJf ocserv-${ocserv_ver}.tar.xz
