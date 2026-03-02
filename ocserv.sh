@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
-echo "DEBUG: Starting script..."
-echo "DEBUG: Args: $@"
-echo "DEBUG: After args check"
 export PATH
 
 #=================================================
@@ -924,7 +921,6 @@ uninstall_ocserv(){
 
 menu(){
 	clear
-	echo "DEBUG: In menu function"
 	echo -e "========================================"
 	echo -e "  ocserv VPN 管理脚本"
 	echo -e "  版本: ${sh_ver}"
@@ -1000,7 +996,6 @@ if [[ $# -gt 0 ]]; then
 		*) echo "用法: $0 {install|start|stop|restart|status|add|del}" ;;
 	esac
 else
-	echo "DEBUG: Calling menu"
 	menu
 fi
 }
