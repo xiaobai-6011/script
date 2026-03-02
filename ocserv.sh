@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "Starting..."
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
 export PATH
 
@@ -920,6 +921,7 @@ uninstall_ocserv(){
 	echo "共删除 ${deleted_count} 项内容"
 
 menu(){
+	 echo "DEBUG: Starting menu"
 	clear
 	echo -e "========================================"
 	echo -e "  ocserv VPN 管理脚本"
