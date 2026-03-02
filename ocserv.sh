@@ -12,7 +12,8 @@ export PATH
 
 sh_ver="1.0.1"
 # 查找ocserv安装路径
-file=$(command -v ocserv 2>/dev/null || echo "/usr/local/sbin/ocserv")
+ocserv_path=$(command -v ocserv 2>/dev/null || echo "/usr/local/sbin/ocserv")
+file="${ocserv_path}"
 conf_file="/usr/local/etc/ocserv"
 conf="${conf_file}/ocserv.conf"
 passwd_file="${conf_file}/ocpasswd"
@@ -349,7 +350,7 @@ start() {
         echo "VPN已在运行"
         return 1
     fi
-    /usr/local/sbin/ocserv -f -d 1 -c $CONF_FILE &
+    ${ocserv_path} -f -d 1 -c $CONF_FILE &
     sleep 2
     if [[ -f $PID_FILE ]]; then
         echo "VPN启动成功"
@@ -403,10 +404,14 @@ EOFSCRIPT
 	# 设置开机自启
 	echo -e "${Info} 设置开机自启..."
 	
+	# 动态获取ocserv路径
+	ocserv_path=$(command -v ocserv 2>/dev/null || echo "${ocserv_path}")
+	ocserv_conf="/usr/local/etc/ocserv/ocserv.conf"
+	
 	# 检测系统类型并设置开机自启
 	if command -v systemctl &> /dev/null && [[ -d /etc/systemd/system ]]; then
 		# systemd 系统 (CentOS 7+, Ubuntu 16.04+, Debian 8+)
-		cat > /etc/systemd/system/ocserv.service << 'EOSERVICE'
+		cat > /etc/systemd/system/ocserv.service << EOSERVICE
 [Unit]
 Description=ocserv VPN
 After=network.target
@@ -414,7 +419,7 @@ After=network.target
 [Service]
 Type=forking
 PIDFile=/var/run/ocserv.pid
-ExecStart=/usr/local/sbin/ocserv -c /usr/local/etc/ocserv/ocserv.conf -d 1
+ExecStart=${ocserv_path} -c ${ocserv_conf} -d 1
 ExecStop=/bin/kill -TERM $MAINPID
 PrivateTmp=true
 
@@ -533,7 +538,7 @@ start_ocserv(){
 	# 查找ocserv路径
 	ocserv_path=$(command -v ocserv 2>/dev/null)
 	if [[ -z ${ocserv_path} ]]; then
-		ocserv_path="/usr/local/sbin/ocserv"
+		ocserv_path="${ocserv_path}"
 	fi
 	
 	if [[ -f $PID_FILE ]]; then
@@ -756,10 +761,14 @@ uninstall_ocserv(){
 	systemctl daemon-reload 2>/dev/null
 	
 	# 删除安装文件
-	rm -rf /usr/local/sbin/ocserv
+	# 查找ocserv实际安装位置
+	uninstall_path=$(command -v ocserv 2>/dev/null)
+	if [[ -n ${uninstall_path} ]]; then
+		rm -f ${uninstall_path}
+	fi
 	rm -rf /usr/local/etc/ocserv
-	rm -f /usr/local/bin/ocpasswd
-	rm -f /usr/local/bin/occtl
+	rm -f /usr/local/bin/ocpasswd 2>/dev/null
+	rm -f /usr/local/bin/occtl 2>/dev/null
 	
 	# 删除日志
 	rm -f ${log_file}
