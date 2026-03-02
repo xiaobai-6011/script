@@ -4,54 +4,69 @@ export PATH
 
 #=================================================
 #	Description: ocserv AnyConnect VPN
-#	Version: 1.0.3
+#	Version: 1.1.0
 #	Author: XZ
 #	URL: https://chuanghongdu.com
-#	支持系统: Debian/Ubuntu/CentOS/RedHat/AlibabaCloud/Rocky/Alma
 #=================================================
 
-sh_ver="1.0.7"
+sh_ver="1.1.0"
 
-# 自动检测ocserv安装路径
+# 全面的ocserv路径检测
 detect_ocserv(){
-	# 先尝试用find查找
-	ocserv_path=$(find /usr -name "ocserv" -type f -executable 2>/dev/null | head -1)
+	ocserv_path=""
 	
-	# 如果find没找到，用rpm包查找(CentOS)
+	# 1. 直接尝试运行ocserv，看哪个路径有效
+	for path in /usr/sbin/ocserv /usr/bin/ocserv /usr/local/sbin/ocserv /usr/local/bin/ocserv /opt/ocserv/sbin/ocserv; do
+		if [[ -f ${path} ]]; then
+			# 检查是否可执行
+			if [[ -x ${path} ]]; then
+				ocserv_path=${path}
+				break
+			else
+				# 尝试添加执行权限
+				chmod +x ${path} 2>/dev/null && if [[ -x ${path} ]]; then
+					ocserv_path=${path}
+					break
+				fi
+			fi
+		fi
+	done
+	
+	# 2. 如果上面没找到，用find搜索
+	if [[ -z ${ocserv_path} ]]; then
+		ocserv_path=$(find /usr -name "ocserv" -type f -executable 2>/dev/null | head -1)
+	fi
+	
+	# 3. 用rpm查找(CentOS/RedHat)
 	if [[ -z ${ocserv_path} ]] && command -v rpm &>/dev/null; then
 		ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "sbin/ocserv$" | head -1)
 	fi
 	
-	# 如果rpm没找到，用command -v
+	# 4. 用dpkg查找(Debian/Ubuntu)
+	if [[ -z ${ocserv_path} ]] && command -v dpkg &>/dev/null; then
+		ocserv_path=$(dpkg -L ocserv 2>/dev/null | grep -E "sbin/ocserv$" | head -1)
+	fi
+	
+	# 5. 用command -v
 	if [[ -z ${ocserv_path} ]]; then
 		ocserv_path=$(command -v ocserv 2>/dev/null)
 	fi
 	
-	# 遍历常见路径
-	if [[ -z ${ocserv_path} ]]; then
-		for path in /usr/sbin/ocserv /usr/bin/ocserv /usr/local/sbin/ocserv; do
-			if [[ -x ${path} ]]; then
-				ocserv_path=${path}
-				break
-			fi
-		done
-	fi
-	
-	# 如果文件存在但不可执行，尝试修复权限
-	if [[ -f ${ocserv_path} ]] && [[ ! -x ${ocserv_path} ]]; then
-		chmod +x ${ocserv_path} 2>/dev/null
-	fi
-	
-	# 最终确保有值
-	if [[ -z ${ocserv_path} ]]; then
+	# 6. 最终备用
+	if [[ -z ${ocserv_path} ]] || [[ ! -f ${ocserv_path} ]]; then
 		ocserv_path="/usr/sbin/ocserv"
 	fi
-	echo -e "${Info} 检测到ocserv: ${ocserv_path}"
+	
+	echo "检测到ocserv路径: ${ocserv_path}"
 }
 
 # 检测配置文件路径
 detect_conf(){
-	# 尝试多个可能的配置目录
+	conf_file=""
+	conf=""
+	passwd_file=""
+	
+	# 多个可能的配置目录
 	for dir in /etc/ocserv /usr/local/etc/ocserv /etc; do
 		if [[ -f ${dir}/ocserv.conf ]]; then
 			conf_file=${dir}
@@ -60,39 +75,16 @@ detect_conf(){
 			break
 		fi
 	done
-	conf_file=${conf_file:-/etc/ocserv}
-	conf=${conf_file}/ocserv.conf
-	passwd_file=${conf_file}/ocpasswd
-}
-
-# 检测运行用户和组
-detect_user_group(){
-	# 检测组
-	if getent group nogroup >/dev/null 2>&1; then
-		default_group="nogroup"
-	elif getent group nobody >/dev/null 2>&1; then
-		default_group="nobody"
-	elif getent group www-data >/dev/null 2>&1; then
-		default_group="www-data"
-	else
-		default_group="nobody"
+	
+	# 如果没找到，使用默认
+	if [[ -z ${conf_file} ]]; then
+		conf_file="/etc/ocserv"
+		conf="${conf_file}/ocserv.conf"
+		passwd_file="${conf_file}/ocpasswd"
 	fi
 	
-	# 检测用户
-	if id nobody >/dev/null 2>&1; then
-		default_user="nobody"
-	elif id www-data >/dev/null 2>&1; then
-		default_user="www-data"
-	elif id daemon >/dev/null 2>&1; then
-		default_user="daemon"
-	else
-		default_user="nobody"
-	fi
+	echo "配置文件目录: ${conf_file}"
 }
-
-detect_ocserv
-detect_conf
-detect_user_group
 
 log_file="/tmp/ocserv.log"
 PID_FILE="/var/run/ocserv.pid"
@@ -102,12 +94,10 @@ Info="${Green}[信息]${NC}"
 Error="${Red}[错误]${NC}"
 Warn="${Yellow}[警告]${NC}"
 
-# 检查root
 check_root(){
 	[[ $EUID != 0 ]] && echo -e "${Error} 请使用ROOT用户运行" && exit 1
 }
 
-# 检查系统
 check_sys(){
 	if [[ -f /etc/redhat-release ]]; then
 		release="centos"
@@ -123,32 +113,25 @@ check_sys(){
 		release="aliyun"
 	elif [[ -f /etc/alinux-release ]]; then
 		release="alinux"
-	elif [[ -f /etc/rocky-release ]]; then
+	elif [[ -f /etc/rocky-release ]] || [[ -f /etc/almalinux-release ]]; then
 		release="centos"
-	elif [[ -f /etc/almalinux-release ]]; then
-		release="centos"
-	elif cat /proc/version 2>/dev/null | grep -qE "debian"; then
+	elif cat /proc/version 2>/dev/null | grep -qE "debian|ubuntu|centos|redhat"; then
 		release="debian"
-	elif cat /proc/version 2>/dev/null | grep -qE "ubuntu"; then
-		release="ubuntu"
-	elif cat /proc/version 2>/dev/null | grep -qE "centos|redhat|rocky"; then
-		release="centos"
 	else
 		echo -e "${Error} 不支持的Linux系统" && exit 1
 	fi
-	
 	echo -e "${Info} 检测到系统: ${release}"
 }
 
-# 安装依赖
 install_dependencies(){
 	echo -e "${Info} 开始安装依赖..."
 	
 	if [[ ${release} == "centos" ]] || [[ ${release} == "aliyun" ]] || [[ ${release} == "alinux" ]]; then
-		# CentOS/阿里云 - 修复yum源
-		if [[ -f /etc/centos-release ]] && ! grep -q "mirrors.aliyun.com" /etc/yum.repos.d/CentOS-Base.repo 2>/dev/null; then
-			mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
-			cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
+		# CentOS/阿里云
+		if [[ -f /etc/centos-release ]]; then
+			if ! grep -q "mirrors.aliyun.com" /etc/yum.repos.d/CentOS-Base.repo 2>/dev/null; then
+				mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
+				cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
 [base]
 name=CentOS-$releasever - Base
 baseurl=https://mirrors.aliyun.com/centos/$releasever/os/$basearch/
@@ -160,121 +143,38 @@ baseurl=https://mirrors.aliyun.com/centos/$releasever/updates/$basearch/
 gpgcheck=0
 enabled=1
 EOF
-			yum clean all 2>/dev/null
+				yum clean all 2>/dev/null
+			fi
 		fi
 		
-		# 安装EPEL
 		yum install -y epel-release 2>/dev/null || true
-		
-		# 安装依赖
-		yum install -y vim net-tools pkgconfig 2>/dev/null || true
-		yum install -y gnutls-devel gnutls-utils 2>/dev/null || true
-		yum install -y libwrap-devel 2>/dev/null || true
-		yum install -y lz4-devel 2>/dev/null || true
-		yum install -y libseccomp-devel 2>/dev/null || true
-		yum install -y readline-devel 2>/dev/null || true
-		yum install -y libnl3-devel 2>/dev/null || true
-		yum install -y libev-devel 2>/dev/null || true
-		yum groupinstall -y "Development Tools" 2>/dev/null || true
+		yum install -y ocserv 2>/dev/null || true
 		
 	elif [[ ${release} == "debian" ]] || [[ ${release} == "ubuntu" ]]; then
 		apt-get update
-		apt-get install -y vim net-tools pkg-config build-essential
-		apt-get install -y libgnutls28-dev libwrap0-dev liblz4-dev
-		apt-get install -y libseccomp-dev libreadline-dev libnl-nf-3-dev libev-dev gnutls-bin
+		apt-get install -y ocserv
 	fi
 	
-	# 安装autoconf
-	if ! command -v autoconf &> /dev/null; then
-		if [[ ${release} == "centos" ]]; then
-			yum install -y autoconf 2>/dev/null || true
-		else
-			apt-get install -y autoconf 2>/dev/null || true
-		fi
-	fi
-	
-	echo -e "${Info} 依赖安装完成"
-}
-
-# 下载编译安装ocserv
-Download_ocserv(){
+	# 检测安装结果
 	detect_ocserv
 	if [[ -x ${ocserv_path} ]]; then
-		echo -e "${Warn} ocserv 已安装 (${ocserv_path})"
-		return 0
+		echo -e "${Info} ocserv 安装成功"
+	else
+		echo -e "${Warn} ocserv 可能未正确安装，将尝试其他方式"
 	fi
-	
-	echo -e "${Info} 开始下载 ocserv..."
-	mkdir -p /tmp/ocserv_build && cd /tmp/ocserv_build
-	
-	ocserv_ver="0.11.8"
-	declare -a sources=(
-		"https://github.com/cisco/ocserv/releases/download/v${ocserv_ver}/ocserv-${ocserv_ver}.tar.xz"
-		"https://ftp.infradead.org/pub/ocserv/ocserv-${ocserv_ver}.tar.xz"
-		"https://mirrors.aliyun.com/ocserv/ocserv-${ocserv_ver}.tar.xz"
-	)
-	
-	download_success=false
-	for src in "${sources[@]}"; do
-		echo -e "${Info} 尝试: ${src}"
-		if wget -O "ocserv-${ocserv_ver}.tar.xz" "$src" 2>/dev/null && [[ -s "ocserv-${ocserv_ver}.tar.xz" ]]; then
-			download_success=true
-			break
-		fi
-	done
-	
-	if [[ $download_success == false ]]; then
-		# 尝试包管理器安装
-		if [[ ${release} == "debian" ]] || [[ ${release} == "ubuntu" ]]; then
-			apt-get update
-			apt-get install -y ocserv occtl 2>/dev/null
-			detect_ocserv
-			if [[ -x ${ocserv_path} ]]; then
-				echo -e "${Info} ocserv 安装成功"
-				return 0
-			fi
-		elif [[ ${release} == "centos" ]]; then
-			yum install -y epel-release 2>/dev/null || true
-			yum install -y ocserv 2>/dev/null || true
-			# 强制重新检测
-			detect_ocserv
-			# 如果还没找到，搜索所有ocserv相关文件
-			if [[ ! -x ${ocserv_path} ]] && command -v rpm &>/dev/null; then
-				ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "ocserv$" | head -1)
-			fi
-			if [[ -x ${ocserv_path} ]]; then
-				echo -e "${Info} ocserv 安装成功 (${ocserv_path})"
-				return 0
-			fi
-		fi
-	fi
-	
-	tar -xJf ocserv-${ocserv_ver}.tar.xz
-	cd ocserv-${ocserv_ver}
-	./configure --prefix=/usr/local --sysconfdir=/etc
-	make -j$(nproc) && make install
-	cd /tmp && rm -rf ocserv_build
-	detect_ocserv
-	[[ -x ${ocserv_path} ]] && echo -e "${Info} ocserv 编译安装成功"
 }
 
-# 配置ocserv
 config_ocserv(){
 	detect_ocserv
 	detect_conf
-	detect_user_group
 	
 	mkdir -p ${conf_file}
 	
-	# 配置文件
+	# 兼容不同版本的配置
 	cat > ${conf} << EOFCONF
 auth = "plain[${passwd_file}]"
 tcp-port = 443
 udp-port = 443
-run-as-user = ${default_user}
-run-as-group = ${default_group}
-socket-file = /var/run/ocserv.socket
-pid-file = ${PID_FILE}
 server-cert = ${conf_file}/server-cert.pem
 server-key = ${conf_file}/server-key.pem
 device = vpns
@@ -292,14 +192,13 @@ max-clients = 0
 tunnel-all-dns = true
 EOFCONF
 
-	# 生成证书(如果证书或私钥不存在)
+	# 生成证书
 	if [[ ! -s "${conf_file}/server-cert.pem" ]] || [[ ! -s "${conf_file}/server-key.pem" ]]; then
 		echo -e "${Info} 生成证书..."
 		cd ${conf_file}
-		# 生成私钥
-		certtool --generate-privkey --outfile server-key.pem 2>/dev/null || true
-		# 生成自签名证书
-		certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template << 'EOFCERT' 2>/dev/null || true
+		if command -v certtool &>/dev/null; then
+			certtool --generate-privkey --outfile server-key.pem 2>/dev/null || true
+			certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template << 'EOFCERT' 2>/dev/null || true
 cn = VPN
 organization = 创泓度网络
 serial = 1
@@ -310,23 +209,18 @@ signing_key
 encryption_key
 tls_www_server
 EOFCERT
-		chmod 600 server-key.pem 2>/dev/null || true
+			chmod 600 server-key.pem 2>/dev/null || true
+		else
+			echo -e "${Warn} certtool未安装，跳过证书生成"
+		fi
 	fi
 	
 	# 启动脚本
 	cat > /etc/init.d/ocserv << 'EOFSCRIPT'
 #!/bin/bash
-### BEGIN INIT INFO
-# Provides:          ocserv
-# Required-Start:    $network $remote_fs
-# Required-Stop:     $network $remote_fs
-# Default-Start:     2 3 4 5
-# Default-Stop:      0 1 6
-# Description:       ocserv VPN
-### END INIT INFO
-
 PID_FILE=/var/run/ocserv.pid
 CONF_FILE=/etc/ocserv/ocserv.conf
+ocserv_path=$(command -v ocserv 2>/dev/null || echo "/usr/sbin/ocserv")
 
 case "$1" in
 start)
@@ -334,7 +228,7 @@ start)
         echo "VPN已在运行"
         exit 1
     fi
-    ${ocserv_path} -f -c $CONF_FILE &
+    $ocserv_path -f -c $CONF_FILE &
     sleep 2
     if [[ -f $PID_FILE ]]; then
         echo "VPN启动成功"
@@ -373,8 +267,9 @@ EOFSCRIPT
 	chmod +x /etc/init.d/ocserv
 	
 	# 开机自启
-	if command -v systemctl &> /dev/null && [[ -d /etc/systemd/system ]]; then
-		cat > /etc/systemd/system/ocserv.service << 'EOSERVICE'
+	if command -v systemctl &>/dev/null && [[ -d /etc/systemd/system ]]; then
+		ocserv_path=$(command -v ocserv 2>/dev/null || echo "/usr/sbin/ocserv")
+		cat > /etc/systemd/system/ocserv.service << EOSERVICE
 [Unit]
 Description=ocserv VPN
 After=network.target
@@ -397,7 +292,6 @@ EOSERVICE
 	echo -e "${Info} ocserv 配置完成"
 }
 
-# 防火墙配置
 config_firewall(){
 	detect_conf
 	tcp_port=$(grep "^tcp-port" ${conf} 2>/dev/null | awk '{print $3}')
@@ -405,34 +299,36 @@ config_firewall(){
 	tcp_port=${tcp_port:-443}
 	udp_port=${udp_port:-443}
 	
-	if command -v firewall-cmd &> /dev/null; then
+	if command -v firewall-cmd &>/dev/null; then
 		firewall-cmd --permanent --add-port=${tcp_port}/tcp 2>/dev/null || true
 		firewall-cmd --permanent --add-port=${udp_port}/udp 2>/dev/null || true
 		firewall-cmd --reload 2>/dev/null || true
-	elif command -v ufw &> /dev/null; then
+	elif command -v ufw &>/dev/null; then
 		ufw allow ${tcp_port}/tcp 2>/dev/null || true
 		ufw allow ${udp_port}/udp 2>/dev/null || true
-	elif command -v iptables &> /dev/null; then
+	elif command -v iptables &>/dev/null; then
 		iptables -I INPUT -p tcp --dport ${tcp_port} -j ACCEPT 2>/dev/null || true
 		iptables -I INPUT -p udp --dport ${udp_port} -j ACCEPT 2>/dev/null || true
 	fi
 	echo -e "${Info} 防火墙配置完成"
 }
 
-# 启动
 start_ocserv(){
 	detect_ocserv
 	detect_conf
 	
-	# 调试信息
-	echo -e "${Info} ocserv路径: ${ocserv_path}"
-	echo -e "${Info} 文件存在: $([ -f ${ocserv_path} ] && echo '是' || echo '否')"
-	echo -e "${Info} 可执行: $([ -x ${ocserv_path} ] && echo '是' || echo '否')"
+	echo "=== 启动调试信息 ==="
+	echo "ocserv路径: ${ocserv_path}"
+	echo "文件存在: $([ -f ${ocserv_path} ] && echo '是' || echo '否')"
+	echo "可执行: $([ -x ${ocserv_path} ] && echo '是' || echo '否')"
 	
+	# 尝试修复权限
 	if [[ -f ${ocserv_path} ]] && [[ ! -x ${ocserv_path} ]]; then
-		echo -e "${Info} 尝试添加执行权限..."
+		echo "尝试添加执行权限..."
 		chmod +x ${ocserv_path} 2>/dev/null
+		echo "权限设置后可执行: $([ -x ${ocserv_path} ] && echo '是' || echo '否')"
 	fi
+	 echo "======================"
 	
 	if [[ -f $PID_FILE ]]; then
 		echo -e "${Warn} ocserv 已在运行"
@@ -449,10 +345,9 @@ start_ocserv(){
 	fi
 }
 
-# 停止
 stop_ocserv(){
-	if [[ !_FILE ]]; then
-		echo -e -f $PID "${Warn} ocserv 未在运行"
+	if [[ ! -f $PID_FILE ]]; then
+		echo -e "${Warn} ocserv 未运行"
 		return 1
 	fi
 	kill $(cat $PID_FILE)
@@ -460,7 +355,6 @@ stop_ocserv(){
 	echo -e "${Info} ocserv 已停止"
 }
 
-# 状态
 status_ocserv(){
 	if [[ -f $PID_FILE ]]; then
 		echo -e "${Info} ocserv 运行中 (PID: $(cat $PID_FILE))"
@@ -469,13 +363,8 @@ status_ocserv(){
 	fi
 }
 
-# 添加用户
 add_user(){
 	detect_conf
-	if [[ -z $1 ]]; then
-		echo -e "${Error} 请输入用户名"
-		return 1
-	fi
 	ocpasswd -c ${passwd_file} $1 << EOF
 $2
 $2
@@ -483,73 +372,46 @@ EOF
 	[[ $? -eq 0 ]] && echo -e "${Info} 用户 $1 添加成功"
 }
 
-# 删除用户
 del_user(){
 	detect_conf
-	if [[ -z $1 ]]; then
-		echo -e "${Error} 请输入用户名"
-		return 1
-	fi
 	ocpasswd -c ${passwd_file} -d $1
 	echo -e "${Info} 用户 $1 已删除"
 }
 
-# 修改欢迎信息(通过banner文件)
 set_welcome(){
 	detect_conf
-	if [[ ! -f ${conf} ]]; then
-		echo -e "${Error} ocserv 未安装"
-		return 1
-	fi
 	banner_file="${conf_file}/banner"
-	echo -e "当前可通过修改 banner 文件来设置欢迎信息"
-	read -p "输入新欢迎信息: " new_welcome
-	if [[ -n ${new_welcome} ]]; then
-		echo "${new_welcome}" > ${banner_file}
-		echo -e "${Info} 已修改为: ${new_welcome}"
-		echo -e "${Info} 文件位置: ${banner_file}"
-		read -p "是否重启? (y/n): " r
-		[[ $r == "y" ]] && { stop_ocserv; sleep 1; start_ocserv; }
-	fi
+	read -p "输入欢迎信息: " new_welcome
+	[[ -n ${new_welcome} ]] && echo "${new_welcome}" > ${banner_file}
+	echo -e "${Info} 欢迎信息已设置"
 }
 
-# 查看在线用户
 view_users(){
-	netstat -an | grep ':443 ' | grep ESTABLISHED | wc -l
+	echo "当前连接数: $(netstat -an | grep ':443 ' | grep ESTABLISHED | wc -l)"
 }
 
-# 流量统计
 view_traffic(){
-	if command -v occtl &> /dev/null; then
-		occtl show stats
-	else
-		echo "当前连接数: $(netstat -an | grep ':443 ' | grep ESTABLISHED | wc -l)"
-	fi
+	view_users
 }
 
-# 修改端口
 set_port(){
 	detect_conf
-	read -p "输入TCP端口: " new_port
-	if [[ -n ${new_port} ]]; then
+	read -p "输入端口: " new_port
+	[[ -n ${new_port} ]] && {
 		sed -i "s/^tcp-port =.*/tcp-port = ${new_port}/" ${conf}
 		sed -i "s/^udp-port =.*/udp-port = ${new_port}/" ${conf}
-		echo -e "${Info} 端口已修改为: ${new_port}"
-		read -p "是否重启? (y/n): " r
-		[[ $r == "y" ]] && { stop_ocserv; sleep 1; start_ocserv; }
-	fi
+		echo -e "${Info} 端口已修改"
+	}
 }
 
-# 重新生成证书
 regen_cert(){
 	detect_conf
-	read -p "确定重新生成证书? (y/n): " c
-	[[ $c != "y" ]] && return
 	cd ${conf_file}
 	mv server-cert.pem server-cert.pem.bak 2>/dev/null
 	mv server-key.pem server-key.pem.bak 2>/dev/null
-	certtool --generate-privkey --outfile server-key.pem 2>/dev/null
-	certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template << 'EOFCERT' 2>/dev/null
+	if command -v certtool &>/dev/null; then
+		certtool --generate-privkey --outfile server-key.pem 2>/dev/null
+		certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template << 'EOFCERT' 2>/dev/null
 cn = VPN
 organization = 创泓度网络
 serial = 1
@@ -560,18 +422,15 @@ signing_key
 encryption_key
 tls_www_server
 EOFCERT
-	chmod 600 server-key.pem 2>/dev/null
+		chmod 600 server-key.pem 2>/dev/null
+	fi
 	echo -e "${Info} 证书已重新生成"
-	read -p "是否重启? (y/n): " r
-	[[ $r == "y" ]] && { stop_ocserv; sleep 1; start_ocserv; }
 }
 
-# 查看日志
 view_log(){
-	[[ -f ${log_file} ]] && tail -n 50 ${log_file} || echo "日志文件不存在"
+	[[ -f ${log_file} ]] && tail -n 50 ${log_file} || echo "无日志"
 }
 
-# 卸载
 uninstall_ocserv(){
 	read -p "确定卸载? (y/n): " c
 	[[ $c != "y" ]] && return
@@ -582,12 +441,11 @@ uninstall_ocserv(){
 	detect_ocserv
 	[[ -x ${ocserv_path} ]] && rm -f ${ocserv_path}
 	rm -rf /etc/ocserv
-	rm -f /usr/local/bin/ocpasswd /usr/local/bin/occtl
+	rm -f /usr/local/bin/ocpasswd /usr/local/bin/occtl 2>/dev/null
 	rm -f ${log_file}
 	echo -e "${Info} ocserv 已卸载"
 }
 
-# 主菜单
 menu(){
 	clear
 	echo -e "========================================"
@@ -618,7 +476,6 @@ menu(){
 			check_root
 			check_sys
 			install_dependencies
-			Download_ocserv
 			config_ocserv
 			config_firewall
 			;;
@@ -631,49 +488,31 @@ menu(){
 		4) stop_ocserv ;;
 		5) stop_ocserv; sleep 1; start_ocserv ;;
 		6) status_ocserv ;;
-		7) 
-			read -p "用户名: " u
-			read -p "密码: " p
-			add_user "$u" "$p"
-			;;
-		8) 
-			read -p "用户名: " u
-			del_user "$u"
-			;;
+		7) read -p "用户名: " u; read -p "密码: " p; add_user "$u" "$p" ;;
+		8) read -p "用户名: " u; del_user "$u" ;;
 		9) set_welcome ;;
 		10) view_users ;;
 		11) view_traffic ;;
 		12) set_port ;;
 		13) regen_cert ;;
 		14) view_log ;;
-		15) 
-			check_root
-			uninstall_ocserv
-			;;
+		15) check_root && uninstall_ocserv ;;
 		0) exit 0 ;;
 	esac
 	read -p "按回车继续..."
 	menu
 }
 
-# 命令行模式
 if [[ $# -gt 0 ]]; then
 	case $1 in
-		install) check_root && check_sys && install_dependencies && Download_ocserv && config_ocserv && config_firewall ;;
+		install) check_root && check_sys && install_dependencies && config_ocserv && config_firewall ;;
 		start) start_ocserv ;;
 		stop) stop_ocserv ;;
 		restart) stop_ocserv; sleep 1; start_ocserv ;;
 		status) status_ocserv ;;
 		add) add_user "$2" "$3" ;;
 		del) del_user "$2" ;;
-		set-welcome) set_welcome ;;
-		users) view_users ;;
-		stats) view_traffic ;;
-		port) set_port ;;
-		regen-cert) regen_cert ;;
-		log) view_log ;;
-		uninstall) check_root && uninstall_ocserv ;;
-		*) echo "用法: $0 {install|start|stop|restart|status|add|del|set-welcome|users|stats|port|regen-cert|log|uninstall}" ;;
+		*) echo "用法: $0 {install|start|stop|restart|status|add|del}" ;;
 	esac
 else
 	menu
