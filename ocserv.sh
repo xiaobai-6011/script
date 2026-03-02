@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.3.1"
+sh_ver="1.3.3"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -255,11 +255,10 @@ EOFTEMPLATE
 		cp /etc/pki/ocserv/private/server.key server-key.pem 2>/dev/null
 		chmod 600 server-key.pem 2>/dev/null
 	fi
-		
-		# 检查结果
-		if [[ ! -s server-cert.pem ]]; then
-			echo -e "${Error} 证书生成失败，请手动配置"
-		fi
+	
+	# 检查结果
+	if [[ ! -s server-cert.pem ]]; then
+		echo -e "${Error} 证书生成失败，请手动配置"
 	fi
 	
 	# 启动脚本
@@ -447,13 +446,35 @@ start_ocserv(){
 }
 
 stop_ocserv(){
+	# 检查PID文件
 	if [[ ! -f $PID_FILE ]]; then
+		# 检查进程是否还在运行
+		if pgrep -x "ocserv" > /dev/null; then
+			echo -e "${Warn} ocserv进程在运行但无PID文件，强制结束..."
+			pkill -9 ocserv 2>/dev/null || true
+			killall -9 ocserv 2>/dev/null || true
+			echo -e "${Info} ocserv 已强制停止"
+			return 0
+		fi
 		echo -e "${Warn} ocserv 未运行"
 		return 1
 	fi
-	kill $(cat $PID_FILE)
-	rm -f $PID_FILE
-	echo -e "${Info} ocserv 已停止"
+	
+	# 检查PID是否有效
+	PID_NUM=$(cat $PID_FILE 2>/dev/null)
+	if [[ -n $PID_NUM ]] && kill -0 $PID_NUM 2>/dev/null; then
+		kill $PID_NUM 2>/dev/null
+		sleep 1
+		# 验证是否停止
+		if kill -0 $PID_NUM 2>/dev/null; then
+			pkill -9 ocserv 2>/dev/null || true
+		fi
+		rm -f $PID_FILE
+		echo -e "${Info} ocserv 已停止"
+	else
+		rm -f $PID_FILE
+		echo -e "${Info} ocserv 已停止"
+	fi
 }
 
 status_ocserv(){
@@ -492,29 +513,30 @@ view_users(){
 	echo "   VPN 在线用户列表"
 	echo "========================================"
 	
-	# 获取连接信息
-	connections=$(netstat -an | grep ':443 ' | grep ESTABLISHED)
+	# 使用ss命令更准确地获取连接信息(排除监听端口)
+	connections=$(ss -tn | grep ':443' | grep ESTABLISHED)
 	count=$(echo "$connections" | wc -l)
 	
 	if [[ ${count} -eq 0 ]]; then
 		echo "当前在线用户: 0"
+		# 也检查PID确认
+		if [[ ! -f /var/run/ocserv.pid ]]; then
+			echo "(VPN服务未运行)"
+		fi
 	else
 		echo "当前在线用户: ${count}"
 		echo ""
-		echo "编号 | 用户名 | VPN IP | 客户端IP | 连接时间"
-		echo "------------------------------------------"
 		
 		# 使用occtl获取详细信息
 		if command -v occtl &>/dev/null; then
-			occtl show users 2>/dev/null | head -20
+			occtl show users 2>/dev/null
 		else
 			# 手动解析
-			i=1
+			echo "客户端IP | 端口"
+			echo "-------------------"
 			echo "$connections" | while read line; do
-				client_ip=$(echo "$line" | awk '{print $5}' | cut -d: -f1)
-				vpn_ip="未知"
-				echo "$i | $vpn_ip | $client_ip | -"
-				i=$((i+1))
+				client=$(echo "$line" | awk '{print $4}')
+				echo "$client"
 			done
 		fi
 	fi
@@ -526,8 +548,8 @@ view_traffic(){
 	echo "   VPN 流量统计"
 	echo "========================================"
 	
-	# 获取连接信息
-	connections=$(netstat -an | grep ':443 ' | grep ESTABLISHED)
+	# 使用ss命令
+	connections=$(ss -tn | grep ':443' | grep ESTABLISHED)
 	count=$(echo "$connections" | wc -l)
 	
 	if [[ ${count} -eq 0 ]]; then
@@ -536,18 +558,19 @@ view_traffic(){
 		echo "当前在线: ${count} 用户"
 		echo ""
 		
-		# 尝试用occtl获取流量
+		# 使用occtl获取流量
 		if command -v occtl &>/dev/null; then
-			occtl show stats 2>/dev/null | head -30
+			occtl show stats 2>/dev/null
 		else
 			# 显示基本信息
-			echo "IP地址 | 接收 | 发送"
-			echo "------------------------"
-			echo "$connections" | awk '{print $5}' | cut -d: -f1 | sort -u | while read ip; do
-				rx="0 MB"
-				tx="0 MB"
-				echo "$ip | $rx | $tx"
+			echo "客户端连接:"
+			echo "$connections" | while read line; do
+				local_ip=$(echo "$line" | awk '{print $4}')
+				remote_ip=$(echo "$line" | awk '{print $5}')
+				echo "  $remote_ip -> $local_ip"
 			done
+			echo ""
+			echo "提示: 安装occtl可以查看详细流量统计"
 		fi
 	fi
 	echo "========================================"
@@ -610,7 +633,44 @@ EOFTEMPLATE
 }
 
 view_log(){
-	[[ -f ${log_file} ]] && tail -n 50 ${log_file} || echo "无日志"
+	echo "========================================"
+	echo "   VPN 运行日志"
+	echo "========================================"
+	
+	# 检查各种可能的日志位置
+	log_found=false
+	
+	# 1. 检查配置的日志文件
+	if [[ -f ${log_file} ]] && [[ -s ${log_file} ]]; then
+		echo "--- 系统日志 ---"
+		tail -n 30 ${log_file}
+		log_found=true
+	fi
+	
+	# 2. 检查systemd日志
+	if command -v journalctl &>/dev/null; then
+		echo ""
+		echo "--- Systemd日志 (最近30条) ---"
+		journalctl -u ocserv -n 30 --no-pager 2>/dev/null || echo "无法获取systemd日志"
+		log_found=true
+	fi
+	
+	# 3. 检查ocserv日志
+	if [[ -f /var/log/ocserv.log ]]; then
+		echo ""
+		echo "--- OCServ日志 ---"
+		tail -n 30 /var/log/ocserv.log
+		log_found=true
+	fi
+	
+	if [[ $log_found == false ]]; then
+		echo "未找到日志文件"
+		echo ""
+		echo "提示: 如果需要记录日志，可以手动启动:"
+		echo "  ocserv -c /etc/ocserv/ocserv.conf -f -d 1"
+	fi
+	
+	echo "========================================"
 }
 
 # 设置限速
@@ -797,67 +857,67 @@ uninstall_ocserv(){
 	read -p "确定要完全卸载ocserv吗? 所有数据将被清除! (y/n): " c
 	[[ $c != "y" ]] && return
 	
-	echo -e "${Info} 开始卸载..."
+	echo ""
+	echo "========================================"
+	echo "   开始卸载 ocserv"
+	echo "========================================"
+	
+	deleted_count=0
 	
 	# 强制停止ocserv
-	echo -e "${Info} 强制停止ocserv..."
+	echo -e "${Info} [1/7] 强制停止ocserv进程..."
 	pkill -9 ocserv 2>/dev/null || true
 	killall -9 ocserv 2>/dev/null || true
 	rm -f /var/run/ocserv.pid 2>/dev/null || true
 	rm -f /var/run/ocserv.socket 2>/dev/null || true
+	echo "  ✓ 已停止"
 	
 	# 删除服务脚本
-	echo -e "${Info} 删除服务脚本..."
-	rm -f /etc/init.d/ocserv 2>/dev/null || true
-	rm -f /etc/systemd/system/ocserv.service 2>/dev/null || true
+	echo -e "${Info} [2/7] 删除服务脚本..."
+	[[ -f /etc/init.d/ocserv ]] && rm -f /etc/init.d/ocserv && echo "  ✓ /etc/init.d/ocserv" && deleted_count=$((deleted_count+1))
+	[[ -f /etc/systemd/system/ocserv.service ]] && rm -f /etc/systemd/system/ocserv.service && echo "  ✓ /etc/systemd/system/ocserv.service" && deleted_count=$((deleted_count+1))
 	systemctl daemon-reload 2>/dev/null || true
 	
 	# 删除ocserv主程序
-	echo -e "${Info} 删除ocserv程序..."
+	echo -e "${Info} [3/7] 删除ocserv程序..."
 	detect_ocserv
-	[[ -x ${ocserv_path} ]] && rm -f ${ocserv_path} 2>/dev/null || true
-	rm -f /usr/bin/ocpasswd 2>/dev/null || true
-	rm -f /usr/bin/occtl 2>/dev/null || true
-	rm -f /usr/local/bin/ocpasswd 2>/dev/null || true
-	rm -f /usr/local/bin/occtl 2>/dev/null || true
+	[[ -f ${ocserv_path} ]] && rm -f ${ocserv_path} && echo "  ✓ ${ocserv_path}" && deleted_count=$((deleted_count+1))
+	[[ -f /usr/bin/ocpasswd ]] && rm -f /usr/bin/ocpasswd && echo "  ✓ /usr/bin/ocpasswd" && deleted_count=$((deleted_count+1))
+	[[ -f /usr/bin/occtl ]] && rm -f /usr/bin/occtl && echo "  ✓ /usr/bin/occtl" && deleted_count=$((deleted_count+1))
+	[[ -f /usr/local/bin/ocpasswd ]] && rm -f /usr/local/bin/ocpasswd && deleted_count=$((deleted_count+1))
+	[[ -f /usr/local/bin/occtl ]] && rm -f /usr/local/bin/occtl && deleted_count=$((deleted_count+1))
 	
 	# 删除配置文件
-	echo -e "${Info} 删除配置文件..."
-	rm -rf /etc/ocserv 2>/dev/null || true
+	echo -e "${Info} [4/7] 删除配置文件..."
+	[[ -d /etc/ocserv ]] && rm -rf /etc/ocserv && echo "  ✓ /etc/ocserv (配置)" && deleted_count=$((deleted_count+1))
 	
 	# 删除用户数据
-	echo -e "${Info} 删除用户数据..."
-	rm -rf /var/lib/ocserv 2>/dev/null || true
+	echo -e "${Info} [5/7] 删除用户数据..."
+	[[ -d /var/lib/ocserv ]] && rm -rf /var/lib/ocserv && echo "  ✓ /var/lib/ocserv (用户数据)" && deleted_count=$((deleted_count+1))
 	
 	# 删除日志
-	echo -e "${Info} 删除日志文件..."
-	rm -f ${log_file} 2>/dev/null || true
-	rm -f /tmp/ocserv.log 2>/dev/null || true
+	echo -e "${Info} [6/7] 删除日志文件..."
+	[[ -f ${log_file} ]] && rm -f ${log_file} && echo "  ✓ ${log_file}" && deleted_count=$((deleted_count+1))
+	[[ -f /tmp/ocserv.log ]] && rm -f /tmp/ocserv.log && deleted_count=$((deleted_count+1))
 	
-	# 删除防火墙规则
-	echo -e "${Info} 清理防火墙规则..."
-	iptables -D INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
-	iptables -D INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null || true
-	iptables -t nat -D POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null || true
-	iptables -D FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null || true
-	iptables -D FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null || true
+	# 清理防火墙规则
+	echo -e "${Info} [7/7] 清理防火墙规则..."
+	iptables -D INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null && echo "  ✓ 防火墙TCP规则" && deleted_count=$((deleted_count+1))
+	iptables -D INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null && echo "  ✓ 防火墙UDP规则" && deleted_count=$((deleted_count+1))
+	iptables -t nat -D POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null && deleted_count=$((deleted_count+1))
+	iptables -D FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null && deleted_count=$((deleted_count+1))
+	iptables -D FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null && deleted_count=$((deleted_count+1))
 	
 	# 卸载ocserv包
-	echo -e "${Info} 卸载ocserv包..."
-	command -v yum &>/dev/null && yum remove -y ocserv 2>/dev/null || true
-	command -v apt &>/dev/null && apt remove -y ocserv 2>/dev/null || true
+	echo -e "${Info} 卸载ocserv安装包..."
+	command -v yum &>/dev/null && yum remove -y ocserv 2>/dev/null && echo "  ✓ ocserv RPM包" && deleted_count=$((deleted_count+1))
+	command -v apt &>/dev/null && apt remove -y ocserv 2>/dev/null && echo "  ✓ ocserv DEB包" && deleted_count=$((deleted_count+1))
 	
+	echo ""
 	echo "========================================"
 	echo -e "   ${Green}ocserv 已完全卸载!${NC}"
 	echo "========================================"
-	echo "已删除:"
-	echo "  - ocserv程序"
-	echo "  - 配置文件"
-	echo "  - 用户数据"
-	echo "  - 日志文件"
-	echo "  - 防火墙规则"
-	echo "  - ocserv安装包"
-}
+	echo "共删除 ${deleted_count} 项内容"
 
 menu(){
 	clear
