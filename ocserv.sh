@@ -17,15 +17,23 @@ passwd_file="${conf_file}/ocpasswd"
 
 # 检测系统
 detect_sys(){
-    if [[ -f /etc/centos-stream-release ]]; then
+    if [[ -f /etc/almalinux-release ]]; then
+        almalinux_ver=$(cat /etc/almalinux-release | grep -oP '\d+' | head -1)
+        echo -e "\033[32m[信息]\033[0m 检测到: AlmaLinux $almalinux_ver"
+        if [[ "$almalinux_ver" == "10" ]]; then
+            release="almalinux10"
+        else
+            release="centos"
+        fi
+    elif [[ -f /etc/centos-stream-release ]]; then
         echo -e "\033[32m[信息]\033[0m 检测到: CentOS Stream"
         release="centos-stream"
     elif [[ -f /etc/redhat-release ]]; then
         echo -e "\033[32m[信息]\033[0m 检测到: CentOS/RHEL"
         release="centos"
     elif [[ -f /etc/os-release ]]; then
+        grep -q "AlmaLinux" /etc/os-release && echo -e "\033[32m[信息]\033[0m 检测到: AlmaLinux" && release="centos"
         grep -q "CentOS Stream" /etc/os-release && echo -e "\033[32m[信息]\033[0m 检测到: CentOS Stream" && release="centos-stream"
-        grep -q "ID=\"centos\"" /etc/os-release && echo -e "\033[32m[信息]\033[0m 检测到: CentOS" && release="centos"
     fi
     echo -e "\033[32m[信息]\033[0m 系统: ${release:-unknown}"
 }
