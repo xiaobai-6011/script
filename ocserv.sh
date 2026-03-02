@@ -31,9 +31,31 @@ detect_sys(){
     elif [[ -f /etc/redhat-release ]]; then
         echo -e "\033[32m[信息]\033[0m 检测到: CentOS/RHEL"
         release="centos"
+    elif [[ -f /etc/debian_version ]]; then
+        debian_ver=$(cat /etc/debian_version)
+        echo -e "\033[32m[信息]\033[0m 检测到: Debian $debian_ver"
+        release="debian"
+    elif [[ -f /etc/lsb-release ]]; then
+        . /etc/lsb-release
+        if [[ "$DISTRIB_ID" == "Ubuntu" ]]; then
+            echo -e "\033[32m[信息]\033[0m 检测到: Ubuntu $DISTRIB_RELEASE"
+            release="ubuntu"
+        fi
     elif [[ -f /etc/os-release ]]; then
-        grep -q "AlmaLinux" /etc/os-release && echo -e "\033[32m[信息]\033[0m 检测到: AlmaLinux" && release="centos"
-        grep -q "CentOS Stream" /etc/os-release && echo -e "\033[32m[信息]\033[0m 检测到: CentOS Stream" && release="centos-stream"
+        . /etc/os-release
+        if [[ "$ID" == "debian" ]]; then
+            echo -e "\033[32m[信息]\033[0m 检测到: Debian $VERSION_ID"
+            release="debian"
+        elif [[ "$ID" == "ubuntu" ]]; then
+            echo -e "\033[32m[信息]\033[0m 检测到: Ubuntu $VERSION_ID"
+            release="ubuntu"
+        elif [[ "$ID" == "AlmaLinux" ]]; then
+            echo -e "\033[32m[信息]\033[0m 检测到: AlmaLinux $VERSION_ID"
+            [[ "$VERSION_ID" == "10" ]] && release="almalinux10" || release="centos"
+        elif [[ "$ID" == "centos" ]]; then
+            echo -e "\033[32m[信息]\033[0m 检测到: CentOS $VERSION_ID"
+            release="centos"
+        fi
     fi
     echo -e "\033[32m[信息]\033[0m 系统: ${release:-unknown}"
 }
@@ -57,7 +79,41 @@ install_deps(){
             systemctl start iptables 2>/dev/null
         fi
         
+    elif [[ "${release}" == "almalinux10" ]]; then
+        echo -e "\033[32m[信息]\033[0m AlmaLinux 10 使用 Copr 源..."
+        dnf install -y dnf-plugins-core 2>/dev/null
+        dnf copr enable -y @ocserv/ocserv 2>/dev/null
+        dnf install -y ocserv 2>/dev/null
+        
+        # 安装防火墙工具
+        if ! command -v iptables &>/dev/null && ! command -v nft &>/dev/null; then
+            dnf install -y iptables-services nftables 2>/dev/null
+            systemctl enable iptables 2>/dev/null
+            systemctl start iptables 2>/dev/null
+        fi
+        
     elif [[ "${release}" == "centos" ]]; then
+        # CentOS 7/8 换阿里云源
+        if [[ -f /etc/yum.repos.d/CentOS-Base.repo ]]; then
+            if ! grep -q "mirrors.aliyun.com" /etc/yum.repos.d/CentOS-Base.repo 2>/dev/null; then
+                echo -e "\033[32m[信息]\033[0m 切换到阿里云源..."
+                mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
+                cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
+[base]
+name=CentOS-$releasever - Base
+baseurl=https://mirrors.aliyun.com/centos/$releasever/os/$basearch/
+gpgcheck=0
+enabled=1
+[updates]
+name=CentOS-$releasever - Updates
+baseurl=https://mirrors.aliyun.com/centos/$releasever/updates/$basearch/
+gpgcheck=0
+enabled=1
+EOF
+                yum clean all 2>/dev/null
+            fi
+        fi
+        
         yum install -y epel-release 2>/dev/null
         yum install -y ocserv 2>/dev/null || dnf install -y ocserv 2>/dev/null
         
@@ -65,7 +121,31 @@ install_deps(){
         if ! command -v iptables &>/dev/null; then
             yum install -y iptables-services 2>/dev/null
         fi
-    else
+        
+    elif [[ "${release}" == "debian" ]] || [[ "${release}" == "ubuntu" ]]; then
+        # 切换到阿里云源 (Debian/Ubuntu)
+        echo -e "\033[32m[信息]\033[0m 更新软件源..."
+        
+        # 备份原源
+        [[ -f /etc/apt/sources.list ]] && cp /etc/apt/sources.list /etc/apt/sources.list.bak
+        
+        if [[ "${release}" == "debian" ]]; then
+            # Debian 阿里云源
+            cat > /etc/apt/sources.list << 'EOF'
+deb https://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware
+deb https://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free non-free-firmware
+deb https://mirrors.aliyun.com/debian-security/ bookworm-security main contrib non-free non-free-firmware
+EOF
+        elif [[ "${release}" == "ubuntu" ]]; then
+            # Ubuntu 阿里云源
+            cat > /etc/apt/sources.list << 'EOF'
+deb https://mirrors.aliyun.com/ubuntu/ jammy main restricted universe multiverse
+deb https://mirrors.aliyun.com/ubuntu/ jammy-updates main restricted universe multiverse
+deb https://mirrors.aliyun.com/ubuntu/ jammy-security main restricted universe multiverse
+deb https://mirrors.aliyun.com/ubuntu/ jammy-backports main restricted universe multiverse
+EOF
+        fi
+        
         apt-get update
         apt-get install -y ocserv
     fi
