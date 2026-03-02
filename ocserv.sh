@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
-echo "DEBUG1"
-echo "DEBUG2"
-echo "DEBUG3"
-echo "DEBUG4"
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
-echo "After PATH"
 export PATH
-echo "After export PATH"
 
 #=================================================
 #	Description: ocserv AnyConnect VPN
@@ -16,12 +10,10 @@ echo "After export PATH"
 #=================================================
 
 sh_ver="1.3.5"
-echo "After sh_ver"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
 	 echo "DEBUG: detect_ocserv defined"
-echo "DEBUG: In detect_ocserv"
 	ocserv_path=""
 	
 	# 1. 直接尝试运行ocserv，看哪个路径有效
@@ -1010,3 +1002,4 @@ else
 	menu
 fi
 }
+echo "Script ended"
