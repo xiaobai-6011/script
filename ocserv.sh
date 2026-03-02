@@ -988,6 +988,7 @@ menu(){
 }
 
 if [[ $# -gt 0 ]]; then
+echo "DEBUG: Args found: $#"
 	case $1 in
 		install) check_root && check_sys && install_dependencies && config_ocserv && config_firewall ;;
 		start) start_ocserv ;;
@@ -999,6 +1000,7 @@ if [[ $# -gt 0 ]]; then
 		*) echo "用法: $0 {install|start|stop|restart|status|add|del}" ;;
 	esac
 else
+echo "DEBUG: No args, calling menu"
 	echo "DEBUG: Calling menu"
 	menu
 fi
