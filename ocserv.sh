@@ -248,7 +248,7 @@ udp-port = 443
 
 # 运行用户
 run-as-user = nobody
-run-as-group = nogroup
+run-as-group = nobody
 
 # PID和Socket文件
 socket-file = /var/run/ocserv.socket
@@ -350,7 +350,7 @@ start() {
         echo "VPN已在运行"
         return 1
     fi
-    ${ocserv_path} -f -d 1 -c $CONF_FILE &
+    ${ocserv_path} -f -d 0 -c $CONF_FILE &
     sleep 2
     if [[ -f $PID_FILE ]]; then
         echo "VPN启动成功"
@@ -419,7 +419,7 @@ After=network.target
 [Service]
 Type=forking
 PIDFile=/var/run/ocserv.pid
-ExecStart=${ocserv_path} -c ${ocserv_conf} -d 1
+ExecStart=${ocserv_path} -c ${ocserv_conf} -d 0
 ExecStop=/bin/kill -TERM $MAINPID
 PrivateTmp=true
 
@@ -546,7 +546,7 @@ start_ocserv(){
 		return 1
 	fi
 	
-	${ocserv_path} -c ${conf} -d &
+	${ocserv_path} -c ${conf} -f &
 	sleep 2
 	
 	if [[ -f $PID_FILE ]]; then
