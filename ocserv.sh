@@ -10,20 +10,25 @@ export PATH
 #	支持系统: Debian/Ubuntu/CentOS/RedHat/AlibabaCloud/Rocky/Alma
 #=================================================
 
-sh_ver="1.0.8"
+sh_ver="1.0.7"
 
 # 自动检测ocserv安装路径
 detect_ocserv(){
-	# 直接从rpm包查找(CentOS最可靠)
-	if command -v rpm &>/dev/null; then
+	# 先尝试用find查找
+	ocserv_path=$(find /usr -name "ocserv" -type f -executable 2>/dev/null | head -1)
+	
+	# 如果find没找到，用rpm包查找(CentOS)
+	if [[ -z ${ocserv_path} ]] && command -v rpm &>/dev/null; then
 		ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "sbin/ocserv$" | head -1)
 	fi
+	
 	# 如果rpm没找到，用command -v
-	if [[ -z ${ocserv_path} ]] || [[ ! -x ${ocserv_path} ]]; then
+	if [[ -z ${ocserv_path} ]]; then
 		ocserv_path=$(command -v ocserv 2>/dev/null)
 	fi
+	
 	# 遍历常见路径
-	if [[ -z ${ocserv_path} ]] || [[ ! -x ${ocserv_path} ]]; then
+	if [[ -z ${ocserv_path} ]]; then
 		for path in /usr/sbin/ocserv /usr/bin/ocserv /usr/local/sbin/ocserv; do
 			if [[ -x ${path} ]]; then
 				ocserv_path=${path}
@@ -31,6 +36,12 @@ detect_ocserv(){
 			fi
 		done
 	fi
+	
+	# 如果文件存在但不可执行，尝试修复权限
+	if [[ -f ${ocserv_path} ]] && [[ ! -x ${ocserv_path} ]]; then
+		chmod +x ${ocserv_path} 2>/dev/null
+	fi
+	
 	# 最终确保有值
 	if [[ -z ${ocserv_path} ]]; then
 		ocserv_path="/usr/sbin/ocserv"
@@ -412,19 +423,25 @@ config_firewall(){
 start_ocserv(){
 	detect_ocserv
 	detect_conf
-	echo -e "${Info} 尝试启动 ocserv (路径: ${ocserv_path})"
-	if [[ ! -x ${ocserv_path} ]]; then
-		echo -e "${Error} ocserv 不可执行: ${ocserv_path}"
-		# 最后尝试
-		ocserv_path="/usr/sbin/ocserv"
-		echo -e "${Info} 尝试备用路径: ${ocserv_path}"
+	
+	# 调试信息
+	echo -e "${Info} ocserv路径: ${ocserv_path}"
+	echo -e "${Info} 文件存在: $([ -f ${ocserv_path} ] && echo '是' || echo '否')"
+	echo -e "${Info} 可执行: $([ -x ${ocserv_path} ] && echo '是' || echo '否')"
+	
+	if [[ -f ${ocserv_path} ]] && [[ ! -x ${ocserv_path} ]]; then
+		echo -e "${Info} 尝试添加执行权限..."
+		chmod +x ${ocserv_path} 2>/dev/null
 	fi
+	
 	if [[ -f $PID_FILE ]]; then
 		echo -e "${Warn} ocserv 已在运行"
 		return 1
 	fi
+	
 	${ocserv_path} -f -c ${conf} &
 	sleep 2
+	
 	if [[ -f $PID_FILE ]]; then
 		echo -e "${Info} ocserv 启动成功"
 	else
