@@ -324,6 +324,9 @@ fix_network(){
         iptables -A FORWARD -s 172.16.0.0/22 -j ACCEPT
         iptables -A FORWARD -d 172.16.0.0/22 -j ACCEPT
         
+        # SSH bypass - 允许VPN用户访问服务器22端口
+        iptables -A INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT
+        
         echo -e "\033[32m[信息]\033[0m iptables 规则已修复"
     fi
     
@@ -333,6 +336,39 @@ fix_network(){
     fi
     
     echo -e "\033[32m[信息]\033[0m 网络修复完成，请重新连接VPN"
+}
+
+# SSH bypass - 允许VPN用户访问SSH
+ssh_bypass(){
+    echo "========================================"
+    echo "  SSH bypass 设置"
+    echo "========================================"
+    echo "1. 开启 SSH bypass (允许VPN用户访问22端口)"
+    echo "2. 关闭 SSH bypass"
+    echo "0. 返回"
+    read -p "请选择: " choice
+    
+    case $choice in
+        1)
+            # 允许VPN网段访问22端口
+            iptables -I INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+            # 持久化
+            if command -v firewall-cmd &>/dev/null; then
+                firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="172.16.0.0/22" port port="22" protocol="tcp" accept' 2>/dev/null
+                firewall-cmd --reload 2>/dev/null
+            fi
+            echo -e "\033[32m[信息]\033[0m SSH bypass 已开启"
+            echo -e "\033[32m[信息]\033[0m VPN用户可以访问服务器22端口"
+            ;;
+        2)
+            iptables -D INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+            if command -v firewall-cmd &>/dev/null; then
+                firewall-cmd --permanent --remove-rich-rule='rule family="ipv4" source address="172.16.0.0/22" port port="22" protocol="tcp" accept' 2>/dev/null
+                firewall-cmd --reload 2>/dev/null
+            fi
+            echo -e "\033[32m[信息]\033[0m SSH bypass 已关闭"
+            ;;
+    esac
 }
 
 # 重新生成证书
@@ -439,10 +475,11 @@ menu(){
     echo "12. 重新生成证书"
     echo "13. 查看日志"
     echo "14. 修复网络"
-    echo "15. 卸载 VPN"
+    echo "15. SSH bypass"
+    echo "16. 卸载 VPN"
     echo "0.  退出"
     echo "========================================"
-    read -p "请输入选项 [0-15]: " choice
+    read -p "请输入选项 [0-16]: " choice
     
     case $choice in
         1)
@@ -465,7 +502,8 @@ menu(){
         12) regen_cert ;;
         13) view_log ;;
         14) fix_network ;;
-        15) uninstall_ocserv ;;
+        15) ssh_bypass ;;
+        16) uninstall_ocserv ;;
         0) exit 0 ;;
     esac
     
