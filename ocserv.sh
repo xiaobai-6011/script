@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.1.6"
+sh_ver="1.1.7"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -195,12 +195,18 @@ tunnel-all-dns = true
 EOFCONF
 
 	# 生成证书 - 自签名优先
-	if [[ ! -s "${conf_file}/server-cert.pem" ]] || [[ ! -s "${conf_file}/server-key.pem" ]]; then
-		echo -e "${Info} 生成自签名证书..."
+	echo -e "${Info} 检查现有证书..."
+	if [[ -s "${conf_file}/server-cert.pem" ]]; then
+		echo -e "${Info} 证书已存在: ${conf_file}/server-cert.pem"
+		cert_info=$(openssl x509 -in ${conf_file}/server-cert.pem -noout -subject 2>/dev/null || echo "无法读取")
+		echo -e "${Info} 证书信息: ${cert_info}"
+	else
+		echo -e "${Info} 开始生成自签名证书..."
 		cd ${conf_file}
 		
 		# 方式1: 用certtool
 		if command -v certtool &>/dev/null; then
+			echo -e "${Info} 使用certtool生成证书..."
 			tmpfile=$(mktemp)
 			cat > ${tmpfile} << 'EOFTEMPLATE'
 cn = "VPN"
@@ -213,22 +219,23 @@ cert_signing_key
 encryption_key
 tls_www_server
 EOFTEMPLATE
-			certtool --generate-privkey --outfile server-key.pem 2>/dev/null
-			certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>/dev/null
+			certtool --generate-privkey --outfile server-key.pem 2>&1 || echo "certtool错误"
+			certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>&1 || echo "certtool错误2"
 			rm -f ${tmpfile}
 			chmod 600 server-key.pem 2>/dev/null
-			[[ -s server-cert.pem ]] && echo -e "${Info} 自签名证书生成完成"
+			[[ -s server-cert.pem ]] && echo -e "${Info} 自签名证书生成完成" || echo -e "${Error} certtool生成失败"
 		# 方式2: 用openssl
 		elif command -v openssl &>/dev/null; then
-			openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=VPN" 2>/dev/null
+			echo -e "${Info} 使用openssl生成证书..."
+			openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=VPN" 2>&1
 			chmod 600 server-key.pem 2>/dev/null
-			[[ -s server-cert.pem ]] && echo -e "${Info} openssl证书生成完成"
+			[[ -s server-cert.pem ]] && echo -e "${Info} openssl证书生成完成" || echo -e "${Error} openssl生成失败"
 		# 方式3: 系统证书备用
 		elif [[ -f /etc/pki/ocserv/public/server.crt ]]; then
+			echo -e "${Warn} 使用系统证书(不推荐)"
 			cp /etc/pki/ocserv/public/server.crt server-cert.pem 2>/dev/null
 			cp /etc/pki/ocserv/private/server.key server-key.pem 2>/dev/null
 			chmod 600 server-key.pem 2>/dev/null
-			echo -e "${Info} 使用系统证书"
 		fi
 		
 		# 检查结果
@@ -350,6 +357,18 @@ start_ocserv(){
 	
 	echo "=== 启动调试信息 ==="
 	echo "ocserv路径: ${ocserv_path}"
+	echo "配置文件: ${conf}"
+	echo "证书: ${conf_file}/server-cert.pem"
+	echo "密钥: ${conf_file}/server-key.pem"
+	
+	# 检查证书
+	if [[ -f ${conf_file}/server-cert.pem ]]; then
+		cert_cn=$(openssl x509 -in ${conf_file}/server-cert.pem -noout -subject 2>/dev/null | grep -o "CN = .*" | cut -d= -f2 || echo "未知")
+		echo "证书CN: ${cert_cn}"
+	else
+		echo "${Error} 证书不存在!"
+	fi
+	
 	echo "文件存在: $([ -f ${ocserv_path} ] && echo '是' || echo '否')"
 	echo "可执行: $([ -x ${ocserv_path} ] && echo '是' || echo '否')"
 	
@@ -361,19 +380,52 @@ start_ocserv(){
 	fi
 	 echo "======================"
 	
+	# 检查PID文件
 	if [[ -f $PID_FILE ]]; then
-		echo -e "${Warn} ocserv 已在运行"
+		PID_NUM=$(cat $PID_FILE 2>/dev/null)
+		if [[ -n $PID_NUM ]] && kill -0 $PID_NUM 2>/dev/null; then
+			echo -e "${Warn} ocserv 已在运行 (PID: $PID_NUM)"
+			return 1
+		else
+			rm -f $PID_FILE
+			echo -e "${Info} 清理过期PID文件"
+		fi
+	fi
+	
+	# 启动前检查配置文件
+	if [[ ! -f ${conf} ]]; then
+		echo -e "${Error} 配置文件不存在: ${conf}"
 		return 1
 	fi
 	
-	${ocserv_path} -f -c ${conf} >/dev/null 2>&1 &
-	sleep 2
-	
-	if [[ -f $PID_FILE ]]; then
-		echo -e "${Info} ocserv 启动成功"
-	else
-		echo -e "${Error} ocserv 启动失败"
+	# 检查证书
+	if [[ ! -f ${conf_file}/server-cert.pem ]]; then
+		echo -e "${Error} 证书文件不存在: ${conf_file}/server-cert.pem"
+		return 1
 	fi
+	
+	if [[ ! -f ${conf_file}/server-key.pem ]]; then
+		echo -e "${Error} 密钥文件不存在: ${conf_file}/server-key.pem"
+		return 1
+	fi
+	
+	echo -e "${Info} 启动ocserv..."
+	${ocserv_path} -f -c ${conf} >/dev/null 2>&1 &
+	sleep 3
+	
+	# 再次检查
+	if [[ -f $PID_FILE ]]; then
+		PID_NUM=$(cat $PID_FILE 2>/dev/null)
+		if kill -0 $PID_NUM 2>/dev/null; then
+			echo -e "${Info} ocserv 启动成功 (PID: $PID_NUM)"
+			return 0
+		fi
+	fi
+	
+	# 如果启动失败，尝试看错误信息
+	echo -e "${Error} ocserv 启动失败，尝试查看错误..."
+	${ocserv_path} -c ${conf} 2>&1 | head -20
+	return 1
 }
 
 stop_ocserv(){
@@ -527,7 +579,11 @@ menu(){
 			;;
 		3) start_ocserv ;;
 		4) stop_ocserv ;;
-		5) stop_ocserv; sleep 1; start_ocserv ;;
+		5) 
+			stop_ocserv 2>/dev/null
+			sleep 2
+			start_ocserv
+			;;
 		6) status_ocserv ;;
 		7) read -p "用户名: " u; read -p "密码: " p; add_user "$u" "$p" ;;
 		8) read -p "用户名: " u; del_user "$u" ;;
