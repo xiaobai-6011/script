@@ -272,6 +272,15 @@ config_firewall(){
         echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
     fi
     echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
+    
+    # 默认开启SSH bypass - 允许VPN用户访问22端口
+    echo -e "\033[32m[信息]\033[0m 配置SSH bypass..."
+    if command -v iptables >/dev/null 2>&1; then
+        iptables -C INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+    elif command -v nft >/dev/null 2>&1; then
+        nft add rule ip filter input tcp dport 22 ip saddr 172.16.0.0/22 accept 2>/dev/null
+    fi
+    echo -e "\033[32m[信息]\033[0m SSH bypass 已开启"
 }
 
 # 启动
