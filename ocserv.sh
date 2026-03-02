@@ -491,46 +491,6 @@ fix_network(){
 }
 
 # SSH bypass - 允许VPN用户访问SSH
-ssh_bypass(){
-    echo "========================================"
-    echo "  SSH bypass 设置"
-    echo "========================================"
-    
-    # 检测并安装防火墙工具
-    if ! command -v iptables &>/dev/null && ! command -v firewall-cmd &>/dev/null; then
-        echo -e "\033[33m[警告]\033[0m 未找到防火墙工具，正在安装..."
-        if command -v dnf &>/dev/null; then
-            dnf install -y iptables-services 2>/dev/null
-        elif command -v yum &>/dev/null; then
-            yum install -y iptables-services 2>/dev/null
-        fi
-    fi
-    
-    echo "1. 开启 SSH bypass (允许VPN用户访问22端口)"
-    echo "2. 关闭 SSH bypass"
-    echo "0. 返回"
-    read -p "请选择: " choice
-    
-    case $choice in
-        1)
-            if command -v firewall-cmd >/dev/null 2>&1; then
-                # firewalld rich rule
-                firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="172.16.0.0/22" port port="22" protocol="tcp" accept' 2>/dev/null
-                firewall-cmd --reload 2>/dev/null
-            elif command -v iptables >/dev/null 2>&1; then
-                iptables -I INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
-                iptables-save > /etc/sysconfig/iptables 2>/dev/null
-            else
-                echo -e "\033[31m[错误]\033[0m 未找到防火墙工具！"
-                return
-            fi
-            echo -e "\033[32m[信息]\033[0m SSH bypass 已开启"
-            # 重启VPN使规则生效
-            restart_ocserv
-            ;;
-        2)
-            if command -v firewall-cmd >/dev/null 2>&1; then
-                firewall-cmd --permanent --remove-rich-rule='rule family="ipv4" source address="172.16.0.0/22" port port="22" protocol="tcp" accept' 2>/dev/null
                 firewall-cmd --reload 2>/dev/null
             elif command -v iptables >/dev/null 2>&1; then
                 iptables -D INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
@@ -615,19 +575,39 @@ uninstall_ocserv(){
     echo -e "\033[32m[信息]\033[0m 开始卸载..."
     
     # 停止服务
+    echo -e "\033[32m[信息]\033[0m 停止服务..."
     stop_ocserv 2>/dev/null
     if [[ -f /var/run/ocserv.pid ]]; then
         kill -9 $(cat /var/run/ocserv.pid) 2>/dev/null
         rm -f /var/run/ocserv.pid
     fi
     pkill -9 ocserv 2>/dev/null || true
+    echo "  ✓ 服务已停止"
     
+    # 删除配置目录
     echo -e "\033[32m[信息]\033[0m 删除配置文件..."
-    # 删除配置 (用户信息、证书)
-    rm -rf ${conf_file}
-    rm -f /var/run/ocserv.socket
-    rm -f ${log_file}
-    echo "  ✓ 已删除 /etc/ocserv"
+    if [[ -d ${conf_file} ]]; then
+        rm -rf ${conf_file}
+        echo "  ✓ 删除 ${conf_file}"
+    fi
+    
+    # 删除PID文件
+    if [[ -f /var/run/ocserv.pid ]]; then
+        rm -f /var/run/ocserv.pid
+        echo "  ✓ 删除 /var/run/ocserv.pid"
+    fi
+    
+    # 删除socket
+    if [[ -f /var/run/ocserv.socket ]]; then
+        rm -f /var/run/ocserv.socket
+        echo "  ✓ 删除 /var/run/ocserv.socket"
+    fi
+    
+    # 删除日志
+    if [[ -f ${log_file} ]]; then
+        rm -f ${log_file}
+        echo "  ✓ 删除 ${log_file}"
+    fi
     
     # 清理防火墙
     if command -v firewall-cmd >/dev/null 2>&1; then
@@ -697,11 +677,10 @@ menu(){
     echo "12. 重新生成证书"
     echo "13. 查看日志"
     echo "14. 修复网络"
-    echo "15. SSH bypass"
-    echo "16. 卸载 VPN"
+    echo "15. 卸载 VPN"
     echo "0.  退出"
     echo "========================================"
-    read -p "请输入选项 [0-16]: " choice
+    read -p "请输入选项 [0-15]: " choice
     
     case $choice in
         1)
@@ -724,8 +703,7 @@ menu(){
         12) regen_cert ;;
         13) view_log ;;
         14) fix_network ;;
-        15) ssh_bypass ;;
-        16) uninstall_ocserv ;;
+        15) uninstall_ocserv ;;
         0) exit 0 ;;
     esac
     
