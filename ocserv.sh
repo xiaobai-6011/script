@@ -152,45 +152,51 @@ config_firewall(){
     # 开启IP转发
     echo 1 > /proc/sys/net/ipv4/ip_forward
     echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf 2>/dev/null
+    sysctl -p 2>/dev/null
     
     if command -v firewall-cmd &>/dev/null; then
-        # CentOS 7+ 使用 firewalld (包括 CentOS Stream 10)
         echo -e "\033[32m[信息]\033[0m 配置 firewalld..."
         
         # 开放端口
         firewall-cmd --permanent --add-port=443/tcp 2>/dev/null
         firewall-cmd --permanent --add-port=443/udp 2>/dev/null
         
-        # 开启NAT转发 - 使用 firewalld rich rule
+        # 开启masquerade (关键！)
         firewall-cmd --permanent --add-masquerade 2>/dev/null
-        
-        # 允许VPN网段转发
-        firewall-cmd --permanent --add-forward-interface --from-interface=vpns+ 2>/dev/null
-        
-        # 允许SSH (可选)
-        # firewall-cmd --permanent --add-port=22/tcp
-        
-        # 重新加载
-        firewall-cmd --reload 2>/dev/null
-        
-        # 立即生效
         firewall-cmd --add-masquerade 2>/dev/null
         
-        # 开启IP转发立即生效
+        # 允许转发
+        firewall-cmd --permanent --add-forward=accept 2>/dev/null
+        firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 0 -j ACCEPT 2>/dev/null
+        
+        # 允许VPN网段
+        firewall-cmd --permanent --add-source=172.16.0.0/22 2>/dev/null
+        firewall-cmd --add-source=172.16.0.0/22 2>/dev/null
+        
+        # 开启IP转发
         firewall-cmd --permanent --set-ip-forward=true 2>/dev/null
+        
+        # 重载
+        firewall-cmd --reload 2>/dev/null
         
         echo -e "\033[32m[信息]\033[0m firewalld 配置完成"
         
     elif command -v nft &>/dev/null; then
-        # CentOS Stream 10 使用 nftables
         echo -e "\033[32m[信息]\033[0m 配置 nftables..."
         
-        # 添加规则
-        nft add rule ip filter INPUT tcp dport 443 accept 2>/dev/null
-        nft add rule ip filter INPUT udp dport 443 accept 2>/dev/null
-        nft add rule ip nat POSTROUTING ip saddr 172.16.0.0/22 masquerade 2>/dev/null
-        nft add rule ip filter FORWARD iifname vpns+ accept 2>/dev/null
-        nft add rule ip filter FORWARD oifname vpns+ accept 2>/dev/null
+        # 添加table
+        nft add table ip nat 2>/dev/null
+        nft add table ip filter 2>/dev/null
+        
+        # NAT - masquerade
+        nft add chain ip nat postrouting { type nat hook postrouting priority srcnat; } 2>/dev/null
+        nft add rule ip nat postrouting ip saddr 172.16.0.0/22 counter masquerade 2>/dev/null
+        
+        # Forward
+        nft add chain ip filter forward { type filter hook forward priority filter; } 2>/dev/null
+        nft add rule ip filter forward iifname vpns+ accept 2>/dev/null
+        nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
+        nft add rule ip filter forward ct state established,related accept 2>/dev/null
         
         # 持久化
         nft list ruleset > /etc/nftables.conf 2>/dev/null
@@ -198,15 +204,26 @@ config_firewall(){
         echo -e "\033[32m[信息]\033[0m nftables 配置完成"
         
     elif command -v iptables &>/dev/null; then
-        # CentOS 6 或手动安装 iptables
         echo -e "\033[32m[信息]\033[0m 配置 iptables..."
-        iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
-        iptables -I INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null
-        iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
-        iptables -A FORWARD -i vpns+ -j ACCEPT 2>/dev/null
-        iptables -A FORWARD -o vpns+ -j ACCEPT 2>/dev/null
-        iptables -A FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
-        iptables -A FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null
+        
+        # 开放端口
+        iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+        iptables -I INPUT -p udp --dport 443 -j ACCEPT
+        
+        # NAT - masquerade (关键！)
+        iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE
+        
+        # 转发
+        iptables -A FORWARD -i vpns+ -j ACCEPT
+        iptables -A FORWARD -o vpns+ -j ACCEPT
+        iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        
+        # 允许VPN网段
+        iptables -A INPUT -s 172.16.0.0/22 -j ACCEPT
+        
+        # 持久化
+        iptables-save > /etc/sysconfig/iptables 2>/dev/null
+        
         echo -e "\033[32m[信息]\033[0m iptables 配置完成"
     fi
     echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
@@ -342,16 +359,24 @@ fix_network(){
     
     # 开启IP转发
     echo 1 > /proc/sys/net/ipv4/ip_forward
+    sysctl -w net.ipv4.ip_forward=1 2>/dev/null
     
     if command -v firewall-cmd &>/dev/null; then
         echo -e "\033[32m[信息]\033[0m 使用 firewalld 修复..."
         
-        # 开启masquerade
-        firewall-cmd --permanent --add-masquerade 2>/dev/null
+        # 开启masquerade (关键！)
         firewall-cmd --add-masquerade 2>/dev/null
+        firewall-cmd --permanent --add-masquerade 2>/dev/null
+        
+        # 允许VPN网段
+        firewall-cmd --add-source=172.16.0.0/22 2>/dev/null
+        firewall-cmd --permanent --add-source=172.16.0.0/22 2>/dev/null
+        
+        # 允许转发
+        firewall-cmd --add-forward=accept 2>/dev/null
         
         # 开启IP转发
-        firewall-cmd --permanent --set-ip-forward=true 2>/dev/null
+        firewall-cmd --set-ip-forward=true 2>/dev/null
         
         # 重载
         firewall-cmd --reload 2>/dev/null
@@ -361,12 +386,17 @@ fix_network(){
     elif command -v nft &>/dev/null; then
         echo -e "\033[32m[信息]\033[0m 使用 nftables 修复..."
         
-        # 添加NAT规则
-        nft add rule ip nat POSTROUTING ip saddr 172.16.0.0/22 masquerade 2>/dev/null
+        # 添加NAT规则 (关键！)
+        nft add table ip nat 2>/dev/null
+        nft add chain ip nat postrouting { type nat hook postrouting priority srcnat; } 2>/dev/null
+        nft add rule ip nat postrouting ip saddr 172.16.0.0/22 counter masquerade 2>/dev/null
         
         # 添加转发规则
-        nft add rule ip filter FORWARD iifname vpns+ accept 2>/dev/null
-        nft add rule ip filter FORWARD oifname vpns+ accept 2>/dev/null
+        nft add table ip filter 2>/dev/null
+        nft add chain ip filter forward { type filter hook forward priority filter; } 2>/dev/null
+        nft add rule ip filter forward iifname vpns+ accept 2>/dev/null
+        nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
+        nft add rule ip filter forward ct state established,related accept 2>/dev/null
         
         # 持久化
         nft list ruleset > /etc/nftables.conf 2>/dev/null
@@ -380,12 +410,14 @@ fix_network(){
         iptables -t nat -F POSTROUTING 2>/dev/null
         iptables -F FORWARD 2>/dev/null
         
-        # 添加新规则
+        # 添加新规则 (关键！)
         iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE
         iptables -A FORWARD -i vpns+ -j ACCEPT
         iptables -A FORWARD -o vpns+ -j ACCEPT
-        iptables -A FORWARD -s 172.16.0.0/22 -j ACCEPT
-        iptables -A FORWARD -d 172.16.0.0/22 -j ACCEPT
+        iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        
+        # 持久化
+        iptables-save > /etc/sysconfig/iptables 2>/dev/null
         
         echo -e "\033[32m[信息]\033[0m iptables 修复完成"
     fi
