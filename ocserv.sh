@@ -10,37 +10,32 @@ export PATH
 #	支持系统: Debian/Ubuntu/CentOS/RedHat/AlibabaCloud/Rocky/Alma
 #=================================================
 
-sh_ver="1.0.4"
+sh_ver="1.0.8"
 
 # 自动检测ocserv安装路径
 detect_ocserv(){
-	# 先用command -v查找
-	ocserv_path=$(command -v ocserv 2>/dev/null)
-	if [[ -z ${ocserv_path} ]]; then
-		# 遍历常见路径
-		for path in /usr/sbin/ocserv /usr/local/sbin/ocserv /usr/bin/ocserv /opt/ocserv/sbin/ocserv; do
+	# 直接从rpm包查找(CentOS最可靠)
+	if command -v rpm &>/dev/null; then
+		ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "sbin/ocserv$" | head -1)
+	fi
+	# 如果rpm没找到，用command -v
+	if [[ -z ${ocserv_path} ]] || [[ ! -x ${ocserv_path} ]]; then
+		ocserv_path=$(command -v ocserv 2>/dev/null)
+	fi
+	# 遍历常见路径
+	if [[ -z ${ocserv_path} ]] || [[ ! -x ${ocserv_path} ]]; then
+		for path in /usr/sbin/ocserv /usr/bin/ocserv /usr/local/sbin/ocserv; do
 			if [[ -x ${path} ]]; then
 				ocserv_path=${path}
 				break
 			fi
 		done
 	fi
-	# 如果还没找到，尝试用which
+	# 最终确保有值
 	if [[ -z ${ocserv_path} ]]; then
-		ocserv_path=$(which ocserv 2>/dev/null)
+		ocserv_path="/usr/sbin/ocserv"
 	fi
-	# 还是没有就用rpm查找(CentOS)
-	if [[ -z ${ocserv_path} ]] && command -v rpm &>/dev/null; then
-		ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "sbin/ocserv$" | head -1)
-	fi
-	ocserv_path=${ocserv_path:-/usr/sbin/ocserv}
-	# 确保默认路径存在
-	if [[ ! -x ${ocserv_path} ]]; then
-		# 从rpm包查找
-		if command -v rpm &>/dev/null; then
-			ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "sbin/ocserv$" | head -1)
-		fi
-	fi
+	echo -e "${Info} 检测到ocserv: ${ocserv_path}"
 }
 
 # 检测配置文件路径
@@ -417,6 +412,13 @@ config_firewall(){
 start_ocserv(){
 	detect_ocserv
 	detect_conf
+	echo -e "${Info} 尝试启动 ocserv (路径: ${ocserv_path})"
+	if [[ ! -x ${ocserv_path} ]]; then
+		echo -e "${Error} ocserv 不可执行: ${ocserv_path}"
+		# 最后尝试
+		ocserv_path="/usr/sbin/ocserv"
+		echo -e "${Info} 尝试备用路径: ${ocserv_path}"
+	fi
 	if [[ -f $PID_FILE ]]; then
 		echo -e "${Warn} ocserv 已在运行"
 		return 1
