@@ -242,6 +242,15 @@ config_firewall(){
         
         echo -e "\033[32m[信息]\033[0m nftables 配置完成"
         
+    elif command -v nft >/dev/null 2>&1; then
+        echo -e "\033[32m[信息]\033[0m 配置 nftables..."
+        nft add table ip nat 2>/dev/null
+        nft add chain ip nat postrouting type nat hook postrouting priority srcnat 2>/dev/null
+        nft add rule ip nat postrouting ip saddr 172.16.0.0/22 masquerade 2>/dev/null
+        nft add table ip filter 2>/dev/null
+        nft add chain ip filter forward type filter hook forward priority filter 2>/dev/null
+        nft add rule ip filter forward iifname vpns0 accept 2>/dev/null
+        nft add rule ip filter forward oifname vpns0 accept 2>/dev/null
     elif command -v iptables >/dev/null 2>&1; then
         echo -e "\033[32m[信息]\033[0m 配置 iptables..."
         
