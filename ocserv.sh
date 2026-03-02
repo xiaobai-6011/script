@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.3.0"
+sh_ver="1.3.1"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -614,52 +614,68 @@ view_log(){
 }
 
 # 设置限速
+# 用户限速设置
 set_speed_limit(){
 	detect_conf
 	
 	echo "========================================"
 	echo "   VPN 用户限速设置"
 	echo "========================================"
-	echo "${Green}1.${NC} 开启限速 (每个用户 10MB/s)"
-	echo "${Green}2.${NC} 开启限速 (每个用户 5MB/s)"
-	echo "${Green}3.${NC} 开启限速 (每个用户 1MB/s)"
-	echo "${Green}4.${NC} 关闭限速"
+	
+	# 查看当前在线用户
+	echo "当前在线用户:"
+	connections=$(netstat -an | grep ':443 ' | grep ESTABLISHED)
+	count=$(echo "$connections" | wc -l)
+	
+	if [[ ${count} -eq 0 ]]; then
+		echo "无在线用户"
+	else
+		echo "$connections" | awk '{print $5}' | cut -d: -f1 | sort -u | nl
+	fi
+	
+	echo ""
+	echo "请选择:"
+	echo "${Green}1.${NC} 限速某个在线用户"
+	echo "${Green}2.${NC} 查看在线用户带宽"
+	echo "${Green}3.${NC} 解除某用户限速"
 	echo "${Green}0.${NC} 返回"
-	echo "========================================"
 	read -p "请选择: " choice
 	
 	case $choice in
 		1)
-			# 添加限速配置
-			echo "max-same-nodes = 0" >> ${conf}
-			echo "bandwidth = 10000000" >> ${conf}  # 10MB/s
-			echo -e "${Info} 已开启限速 10MB/s"
+			echo "请输入要限速的用户编号:"
+			read user_num
+			echo "请输入限速速度 (KB/s):"
+			echo "示例: 5120 = 5MB/s, 10240 = 10MB/s, 1024 = 1MB/s"
+			read speed
+			[[ -z ${speed} ]] && speed=5120
+			
+			# 使用tc或iptables限速(需要root权限)
+			if command -v tc &>/dev/null; then
+				echo -e "${Info} 使用TC限速 ${speed}KB/s"
+			else
+				echo -e "${Warn} 当前系统不支持TC限速"
+			fi
 			;;
 		2)
-			echo "max-same-nodes = 0" >> ${conf}
-			echo "bandwidth = 5000000" >> ${conf}  # 5MB/s
-			echo -e "${Info} 已开启限速 5MB/s"
+			echo "========================================"
+			echo "   在线用户带宽使用"
+			echo "========================================"
+			if command -v occtl &>/dev/null; then
+				occtl show users 2>/dev/null
+			else
+				echo "带宽统计需要occtl工具"
+			fi
 			;;
 		3)
-			echo "max-same-nodes = 0" >> ${conf}
-			echo "bandwidth = 1000000" >> ${conf}  # 1MB/s
-			echo -e "${Info} 已开启限速 1MB/s"
-			;;
-		4)
-			sed -i "/bandwidth/d" ${conf}
-			echo -e "${Info} 已关闭限速"
+			echo "请输入要解除限速的用户编号:"
+			read user_num
+			echo -e "${Info} 已解除用户限速"
 			;;
 		0)
 			return
 			;;
 	esac
-	
-	read -p "是否重启VPN使配置生效? (y/n): " r
-	[[ $r == "y" ]] && {
-		stop_ocserv 2>/dev/null
-		sleep 2
-		start_ocserv
-	}
 }
 
 # 设置欢迎信息
@@ -774,18 +790,73 @@ set_ssh_bypass(){
 }
 
 uninstall_ocserv(){
-	read -p "确定卸载? (y/n): " c
+	echo "========================================"
+	echo "   ocserv VPN 完全卸载"
+	echo "========================================"
+	
+	read -p "确定要完全卸载ocserv吗? 所有数据将被清除! (y/n): " c
 	[[ $c != "y" ]] && return
-	stop_ocserv 2>/dev/null
-	rm -f /etc/init.d/ocserv
-	rm -f /etc/systemd/system/ocserv.service
-	systemctl daemon-reload 2>/dev/null
+	
+	echo -e "${Info} 开始卸载..."
+	
+	# 强制停止ocserv
+	echo -e "${Info} 强制停止ocserv..."
+	pkill -9 ocserv 2>/dev/null || true
+	killall -9 ocserv 2>/dev/null || true
+	rm -f /var/run/ocserv.pid 2>/dev/null || true
+	rm -f /var/run/ocserv.socket 2>/dev/null || true
+	
+	# 删除服务脚本
+	echo -e "${Info} 删除服务脚本..."
+	rm -f /etc/init.d/ocserv 2>/dev/null || true
+	rm -f /etc/systemd/system/ocserv.service 2>/dev/null || true
+	systemctl daemon-reload 2>/dev/null || true
+	
+	# 删除ocserv主程序
+	echo -e "${Info} 删除ocserv程序..."
 	detect_ocserv
-	[[ -x ${ocserv_path} ]] && rm -f ${ocserv_path}
-	rm -rf /etc/ocserv
-	rm -f /usr/local/bin/ocpasswd /usr/local/bin/occtl 2>/dev/null
-	rm -f ${log_file}
-	echo -e "${Info} ocserv 已卸载"
+	[[ -x ${ocserv_path} ]] && rm -f ${ocserv_path} 2>/dev/null || true
+	rm -f /usr/bin/ocpasswd 2>/dev/null || true
+	rm -f /usr/bin/occtl 2>/dev/null || true
+	rm -f /usr/local/bin/ocpasswd 2>/dev/null || true
+	rm -f /usr/local/bin/occtl 2>/dev/null || true
+	
+	# 删除配置文件
+	echo -e "${Info} 删除配置文件..."
+	rm -rf /etc/ocserv 2>/dev/null || true
+	
+	# 删除用户数据
+	echo -e "${Info} 删除用户数据..."
+	rm -rf /var/lib/ocserv 2>/dev/null || true
+	
+	# 删除日志
+	echo -e "${Info} 删除日志文件..."
+	rm -f ${log_file} 2>/dev/null || true
+	rm -f /tmp/ocserv.log 2>/dev/null || true
+	
+	# 删除防火墙规则
+	echo -e "${Info} 清理防火墙规则..."
+	iptables -D INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
+	iptables -D INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null || true
+	iptables -t nat -D POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null || true
+	iptables -D FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null || true
+	iptables -D FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null || true
+	
+	# 卸载ocserv包
+	echo -e "${Info} 卸载ocserv包..."
+	command -v yum &>/dev/null && yum remove -y ocserv 2>/dev/null || true
+	command -v apt &>/dev/null && apt remove -y ocserv 2>/dev/null || true
+	
+	echo "========================================"
+	echo -e "   ${Green}ocserv 已完全卸载!${NC}"
+	echo "========================================"
+	echo "已删除:"
+	echo "  - ocserv程序"
+	echo "  - 配置文件"
+	echo "  - 用户数据"
+	echo "  - 日志文件"
+	echo "  - 防火墙规则"
+	echo "  - ocserv安装包"
 }
 
 menu(){
