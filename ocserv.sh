@@ -154,29 +154,60 @@ config_firewall(){
     echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf 2>/dev/null
     
     if command -v firewall-cmd &>/dev/null; then
-        # CentOS 7+ 使用 firewalld
+        # CentOS 7+ 使用 firewalld (包括 CentOS Stream 10)
         echo -e "\033[32m[信息]\033[0m 配置 firewalld..."
+        
+        # 开放端口
         firewall-cmd --permanent --add-port=443/tcp 2>/dev/null
         firewall-cmd --permanent --add-port=443/udp 2>/dev/null
-        # 开启NAT转发
-        firewall-cmd --permanent --direct --add-rule ipv4 nat POSTROUTING 0 -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
-        firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 0 -i vpns+ -j ACCEPT 2>/dev/null
-        firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 0 -o vpns+ -j ACCEPT 2>/dev/null
-        firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 0 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+        
+        # 开启NAT转发 - 使用 firewalld rich rule
+        firewall-cmd --permanent --add-masquerade 2>/dev/null
+        
+        # 允许VPN网段转发
+        firewall-cmd --permanent --add-forward-interface --from-interface=vpns+ 2>/dev/null
+        
+        # 允许SSH (可选)
+        # firewall-cmd --permanent --add-port=22/tcp
+        
+        # 重新加载
         firewall-cmd --reload 2>/dev/null
+        
+        # 立即生效
+        firewall-cmd --add-masquerade 2>/dev/null
+        
+        # 开启IP转发立即生效
+        firewall-cmd --permanent --set-ip-forward=true 2>/dev/null
+        
+        echo -e "\033[32m[信息]\033[0m firewalld 配置完成"
+        
+    elif command -v nft &>/dev/null; then
+        # CentOS Stream 10 使用 nftables
+        echo -e "\033[32m[信息]\033[0m 配置 nftables..."
+        
+        # 添加规则
+        nft add rule ip filter INPUT tcp dport 443 accept 2>/dev/null
+        nft add rule ip filter INPUT udp dport 443 accept 2>/dev/null
+        nft add rule ip nat POSTROUTING ip saddr 172.16.0.0/22 masquerade 2>/dev/null
+        nft add rule ip filter FORWARD iifname vpns+ accept 2>/dev/null
+        nft add rule ip filter FORWARD oifname vpns+ accept 2>/dev/null
+        
+        # 持久化
+        nft list ruleset > /etc/nftables.conf 2>/dev/null
+        
+        echo -e "\033[32m[信息]\033[0m nftables 配置完成"
         
     elif command -v iptables &>/dev/null; then
         # CentOS 6 或手动安装 iptables
         echo -e "\033[32m[信息]\033[0m 配置 iptables..."
         iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
         iptables -I INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null
-        # NAT转发
         iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
-        # 转发
         iptables -A FORWARD -i vpns+ -j ACCEPT 2>/dev/null
         iptables -A FORWARD -o vpns+ -j ACCEPT 2>/dev/null
         iptables -A FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
         iptables -A FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null
+        echo -e "\033[32m[信息]\033[0m iptables 配置完成"
     fi
     echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
 }
@@ -312,7 +343,39 @@ fix_network(){
     # 开启IP转发
     echo 1 > /proc/sys/net/ipv4/ip_forward
     
-    if command -v iptables &>/dev/null; then
+    if command -v firewall-cmd &>/dev/null; then
+        echo -e "\033[32m[信息]\033[0m 使用 firewalld 修复..."
+        
+        # 开启masquerade
+        firewall-cmd --permanent --add-masquerade 2>/dev/null
+        firewall-cmd --add-masquerade 2>/dev/null
+        
+        # 开启IP转发
+        firewall-cmd --permanent --set-ip-forward=true 2>/dev/null
+        
+        # 重载
+        firewall-cmd --reload 2>/dev/null
+        
+        echo -e "\033[32m[信息]\033[0m firewalld 修复完成"
+        
+    elif command -v nft &>/dev/null; then
+        echo -e "\033[32m[信息]\033[0m 使用 nftables 修复..."
+        
+        # 添加NAT规则
+        nft add rule ip nat POSTROUTING ip saddr 172.16.0.0/22 masquerade 2>/dev/null
+        
+        # 添加转发规则
+        nft add rule ip filter FORWARD iifname vpns+ accept 2>/dev/null
+        nft add rule ip filter FORWARD oifname vpns+ accept 2>/dev/null
+        
+        # 持久化
+        nft list ruleset > /etc/nftables.conf 2>/dev/null
+        
+        echo -e "\033[32m[信息]\033[0m nftables 修复完成"
+        
+    elif command -v iptables &>/dev/null; then
+        echo -e "\033[32m[信息]\033[0m 使用 iptables 修复..."
+        
         # 清理旧规则
         iptables -t nat -F POSTROUTING 2>/dev/null
         iptables -F FORWARD 2>/dev/null
@@ -324,15 +387,7 @@ fix_network(){
         iptables -A FORWARD -s 172.16.0.0/22 -j ACCEPT
         iptables -A FORWARD -d 172.16.0.0/22 -j ACCEPT
         
-        # SSH bypass - 允许VPN用户访问服务器22端口
-        iptables -A INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT
-        
-        echo -e "\033[32m[信息]\033[0m iptables 规则已修复"
-    fi
-    
-    if command -v firewall-cmd &>/dev/null; then
-        firewall-cmd --reload
-        echo -e "\033[32m[信息]\033[0m firewalld 已重载"
+        echo -e "\033[32m[信息]\033[0m iptables 修复完成"
     fi
     
     echo -e "\033[32m[信息]\033[0m 网络修复完成，请重新连接VPN"
@@ -350,21 +405,26 @@ ssh_bypass(){
     
     case $choice in
         1)
-            # 允许VPN网段访问22端口
-            iptables -I INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
-            # 持久化
             if command -v firewall-cmd &>/dev/null; then
+                # firewalld rich rule
                 firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="172.16.0.0/22" port port="22" protocol="tcp" accept' 2>/dev/null
                 firewall-cmd --reload 2>/dev/null
+            elif command -v nft &>/dev/null; then
+                # nftables
+                nft add rule ip filter INPUT tcp dport 22 ip saddr 172.16.0.0/22 accept 2>/dev/null
+            elif command -v iptables &>/dev/null; then
+                iptables -I INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
             fi
             echo -e "\033[32m[信息]\033[0m SSH bypass 已开启"
-            echo -e "\033[32m[信息]\033[0m VPN用户可以访问服务器22端口"
             ;;
         2)
-            iptables -D INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
             if command -v firewall-cmd &>/dev/null; then
                 firewall-cmd --permanent --remove-rich-rule='rule family="ipv4" source address="172.16.0.0/22" port port="22" protocol="tcp" accept' 2>/dev/null
                 firewall-cmd --reload 2>/dev/null
+            elif command -v nft &>/dev/null; then
+                nft delete rule ip filter INPUT tcp dport 22 ip saddr 172.16.0.0/22 accept 2>/dev/null
+            elif command -v iptables &>/dev/null; then
+                iptables -D INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
             fi
             echo -e "\033[32m[信息]\033[0m SSH bypass 已关闭"
             ;;
