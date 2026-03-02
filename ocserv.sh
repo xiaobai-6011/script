@@ -601,6 +601,13 @@ uninstall_ocserv(){
     echo "========================================"
     echo "  卸载 ocserv VPN"
     echo "========================================"
+    echo "将删除："
+    echo "  - ocserv 软件包"
+    echo "  - 用户信息 (/etc/ocserv)"
+    echo "  - 证书文件"
+    echo "  - 日志文件"
+    echo "  - 防火墙规则"
+    echo "========================================"
     read -p "确定要完全卸载吗? (y/n): " c
     [[ $c != "y" ]] && return
     
@@ -608,19 +615,18 @@ uninstall_ocserv(){
     
     # 停止服务
     stop_ocserv 2>/dev/null
-    # 强制停止ocserv进程
     if [[ -f /var/run/ocserv.pid ]]; then
         kill -9 $(cat /var/run/ocserv.pid) 2>/dev/null
         rm -f /var/run/ocserv.pid
     fi
-    # 也尝试用pkill
     pkill -9 ocserv 2>/dev/null || true
     
-    # 删除配置
+    echo -e "\033[32m[信息]\033[0m 删除配置文件..."
+    # 删除配置 (用户信息、证书)
     rm -rf ${conf_file}
-    rm -f /var/run/ocserv.pid
     rm -f /var/run/ocserv.socket
     rm -f ${log_file}
+    echo "  ✓ 已删除 /etc/ocserv"
     
     # 清理防火墙
     if command -v firewall-cmd >/dev/null 2>&1; then
