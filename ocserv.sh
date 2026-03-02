@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.3.4"
+sh_ver="1.3.5"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -107,13 +107,13 @@ check_sys(){
 		release="debian"
 	elif cat /etc/issue 2>/dev/null | grep -qE -i "ubuntu"; then
 		release="ubuntu"
-	elif cat /etc/issue 2>/dev/null | grep -qE -i "centos|redhat|rocky|alma|anolis"; then
+	elif cat /etc/issue 2>/dev/null | grep -qE -i "centos|redhat|rocky|alma|almaLinux|anolis"; then
 		release="centos"
 	elif cat /etc/os-release 2>/dev/null | grep -qE "Alibaba|Aliyun"; then
 		release="aliyun"
 	elif [[ -f /etc/alinux-release ]]; then
 		release="alinux"
-	elif [[ -f /etc/rocky-release ]] || [[ -f /etc/almalinux-release ]]; then
+	elif [[ -f /etc/rocky-release ]] || [[ -f /etc/almaLinux-release ]]; then
 		release="centos"
 	elif cat /proc/version 2>/dev/null | grep -qE "debian|ubuntu|centos|redhat"; then
 		release="debian"
@@ -998,3 +998,4 @@ if [[ $# -gt 0 ]]; then
 else
 	menu
 fi
+}
