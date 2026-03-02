@@ -489,59 +489,6 @@ fix_network(){
     echo -e "\033[32m[信息]\033[0m 网络修复完成，请重新连接VPN"
 }
 
-# SSH bypass - 允许VPN用户访问SSH
-ssh_bypass(){
-    echo "========================================"
-    echo "  SSH bypass 设置"
-    echo "========================================"
-    
-    # 检测并安装防火墙工具
-    if ! command -v iptables &>/dev/null && ! command -v firewall-cmd &>/dev/null; then
-        echo -e "\033[33m[警告]\033[0m 未找到防火墙工具，正在安装..."
-        if command -v dnf &>/dev/null; then
-            dnf install -y iptables-services 2>/dev/null
-        elif command -v yum &>/dev/null; then
-            yum install -y iptables-services 2>/dev/null
-        fi
-    fi
-    
-    echo "1. 开启 SSH bypass (允许VPN用户访问22端口)"
-    echo "2. 关闭 SSH bypass"
-    echo "0. 返回"
-    read -p "请选择: " choice
-    
-    case $choice in
-        1)
-            if command -v firewall-cmd >/dev/null 2>&1; then
-                # firewalld rich rule
-                firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="172.16.0.0/22" port port="22" protocol="tcp" accept' 2>/dev/null
-                firewall-cmd --reload 2>/dev/null
-            elif command -v iptables >/dev/null 2>&1; then
-                iptables -I INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
-                iptables-save > /etc/sysconfig/iptables 2>/dev/null
-            else
-                echo -e "\033[31m[错误]\033[0m 未找到防火墙工具！"
-                return
-            fi
-            echo -e "\033[32m[信息]\033[0m SSH bypass 已开启"
-            # 重启VPN使规则生效
-            restart_ocserv
-            ;;
-        2)
-            if command -v firewall-cmd >/dev/null 2>&1; then
-                firewall-cmd --permanent --remove-rich-rule='rule family="ipv4" source address="172.16.0.0/22" port port="22" protocol="tcp" accept' 2>/dev/null
-                firewall-cmd --reload 2>/dev/null
-            elif command -v iptables >/dev/null 2>&1; then
-                iptables -D INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
-                iptables-save > /etc/sysconfig/iptables 2>/dev/null
-            fi
-            echo -e "\033[32m[信息]\033[0m SSH bypass 已关闭"
-            # 重启VPN使规则生效
-            restart_ocserv
-            ;;
-    esac
-}
-
 # 重新生成证书
 regen_cert(){
     echo -e "\033[32m[信息]\033[0m 重新生成证书..."
@@ -643,7 +590,6 @@ uninstall_ocserv(){
         # 删除端口规则
         iptables -D INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
         iptables -D INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null
-        # 删除SSH bypass规则
         iptables -D INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
         # 保存
         iptables-save > /etc/sysconfig/iptables 2>/dev/null
@@ -690,11 +636,11 @@ menu(){
     echo "12. 重新生成证书"
     echo "13. 查看日志"
     echo "14. 修复网络"
-    echo "15. SSH bypass"
-    echo "16. 卸载 VPN"
+    echo ""
+    echo "15. 卸载 VPN"
     echo "0.  退出"
     echo "========================================"
-    read -p "请输入选项 [0-16]: " choice
+    read -p "请输入选项 [0-15]: " choice
     
     case $choice in
         1)
