@@ -513,6 +513,8 @@ ssh_bypass(){
                 return
             fi
             echo -e "\033[32m[信息]\033[0m SSH bypass 已开启"
+            # 重启VPN使规则生效
+            restart_ocserv
             ;;
         2)
             if command -v firewall-cmd >/dev/null 2>&1; then
@@ -523,6 +525,8 @@ ssh_bypass(){
                 iptables-save > /etc/sysconfig/iptables 2>/dev/null
             fi
             echo -e "\033[32m[信息]\033[0m SSH bypass 已关闭"
+            # 重启VPN使规则生效
+            restart_ocserv
             ;;
     esac
 }
