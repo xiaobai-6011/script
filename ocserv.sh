@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.1.0"
+sh_ver="1.1.1"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -192,26 +192,39 @@ max-clients = 0
 tunnel-all-dns = true
 EOFCONF
 
-	# 生成证书
+	# 生成证书 - 使用文件方式避免模板解析问题
 	if [[ ! -s "${conf_file}/server-cert.pem" ]] || [[ ! -s "${conf_file}/server-key.pem" ]]; then
 		echo -e "${Info} 生成证书..."
 		cd ${conf_file}
-		if command -v certtool &>/dev/null; then
-			certtool --generate-privkey --outfile server-key.pem 2>/dev/null || true
-			certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template << 'EOFCERT' 2>/dev/null || true
-cn = VPN
-organization = 创泓度网络
+		
+		# 尝试复制系统证书
+		if [[ -f /etc/pki/ocserv/public/server.crt ]]; then
+			cp /etc/pki/ocserv/public/server.crt server-cert.pem 2>/dev/null
+			cp /etc/pki/ocserv/private/server.key server-key.pem 2>/dev/null
+			chmod 600 server-key.pem 2>/dev/null
+			echo -e "${Info} 使用系统证书"
+		# 用certtool生成
+		elif command -v certtool &>/dev/null; then
+			# 创建临时模板文件
+			tmpfile=$(mktemp)
+			cat > ${tmpfile} << 'EOFTEMPLATE'
+cn = "VPN"
+organization = "VPN"
 serial = 1
-activation_time = 2024-01-01 00:00:00
-expiration_time = 2030-12-31 23:59:59
+expiration_days = 3650
 ca
 signing_key
+cert_signing_key
 encryption_key
 tls_www_server
-EOFCERT
-			chmod 600 server-key.pem 2>/dev/null || true
+EOFTEMPLATE
+			certtool --generate-privkey --outfile server-key.pem 2>/dev/null
+			certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>/dev/null
+			rm -f ${tmpfile}
+			chmod 600 server-key.pem 2>/dev/null
+			echo -e "${Info} 自签名证书生成完成"
 		else
-			echo -e "${Warn} certtool未安装，跳过证书生成"
+			echo -e "${Warn} 无法生成证书，请手动配置"
 		fi
 	fi
 	
