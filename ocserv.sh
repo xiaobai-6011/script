@@ -11,7 +11,8 @@ export PATH
 #=================================================
 
 sh_ver="1.0.1"
-file="/usr/local/sbin/ocserv"
+# 查找ocserv安装路径
+file=$(command -v ocserv 2>/dev/null || echo "/usr/local/sbin/ocserv")
 conf_file="/usr/local/etc/ocserv"
 conf="${conf_file}/ocserv.conf"
 passwd_file="${conf_file}/ocpasswd"
@@ -529,12 +530,18 @@ del_user(){
 
 # 启动服务
 start_ocserv(){
+	# 查找ocserv路径
+	ocserv_path=$(command -v ocserv 2>/dev/null)
+	if [[ -z ${ocserv_path} ]]; then
+		ocserv_path="/usr/local/sbin/ocserv"
+	fi
+	
 	if [[ -f $PID_FILE ]]; then
 		echo -e "${Warn} ocserv 已在运行"
 		return 1
 	fi
 	
-	/usr/local/sbin/ocserv -c ${conf} -d &
+	${ocserv_path} -c ${conf} -d &
 	sleep 2
 	
 	if [[ -f $PID_FILE ]]; then
