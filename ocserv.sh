@@ -167,7 +167,6 @@ config_firewall(){
         
         # 允许转发
         firewall-cmd --permanent --add-forward=accept 2>/dev/null
-        firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 0 -j ACCEPT 2>/dev/null
         
         # 允许VPN网段
         firewall-cmd --permanent --add-source=172.16.0.0/22 2>/dev/null
@@ -182,21 +181,23 @@ config_firewall(){
         echo -e "\033[32m[信息]\033[0m firewalld 配置完成"
         
     elif command -v nft &>/dev/null; then
-        echo -e "\033[32m[信息]\033[0m 配置 nftables..."
+        echo -e "\033[32m[信息]\033[0m 配置 nftables (CentOS Stream 10)..."
         
-        # 添加table
+        # 添加NAT table
         nft add table ip nat 2>/dev/null
-        nft add table ip filter 2>/dev/null
-        
-        # NAT - masquerade
         nft add chain ip nat postrouting { type nat hook postrouting priority srcnat; } 2>/dev/null
         nft add rule ip nat postrouting ip saddr 172.16.0.0/22 counter masquerade 2>/dev/null
         
-        # Forward
+        # 添加filter table
+        nft add table ip filter 2>/dev/null
         nft add chain ip filter forward { type filter hook forward priority filter; } 2>/dev/null
         nft add rule ip filter forward iifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward ct state established,related accept 2>/dev/null
+        
+        # 允许443端口
+        nft add rule ip filter input tcp dport 443 accept 2>/dev/null
+        nft add rule ip filter input udp dport 443 accept 2>/dev/null
         
         # 持久化
         nft list ruleset > /etc/nftables.conf 2>/dev/null
@@ -225,6 +226,9 @@ config_firewall(){
         iptables-save > /etc/sysconfig/iptables 2>/dev/null
         
         echo -e "\033[32m[信息]\033[0m iptables 配置完成"
+    else
+        echo -e "\033[31m[错误]\033[0m 未找到防火墙工具！"
+        echo -e "\033[33m[警告]\033[0m 请手动配置 nftables 或安装 iptables"
     fi
     echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
 }
@@ -398,6 +402,10 @@ fix_network(){
         nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward ct state established,related accept 2>/dev/null
         
+        # 允许443端口
+        nft add rule ip filter input tcp dport 443 accept 2>/dev/null
+        nft add rule ip filter input udp dport 443 accept 2>/dev/null
+        
         # 持久化
         nft list ruleset > /etc/nftables.conf 2>/dev/null
         
@@ -420,6 +428,9 @@ fix_network(){
         iptables-save > /etc/sysconfig/iptables 2>/dev/null
         
         echo -e "\033[32m[信息]\033[0m iptables 修复完成"
+    else
+        echo -e "\033[31m[错误]\033[0m 未找到防火墙工具！"
+        echo -e "\033[33m[警告]\033[0m 请手动运行: nft -f - <<< 'add table ip nat; add chain ip nat postrouting { type nat hook postrouting priority srcnat; }; add rule ip nat postrouting ip saddr 172.16.0.0/22 masquerade'"
     fi
     
     echo -e "\033[32m[信息]\033[0m 网络修复完成，请重新连接VPN"
