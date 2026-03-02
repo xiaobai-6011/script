@@ -95,14 +95,20 @@ config_firewall(){
     echo 1 > /proc/sys/net/ipv4/ip_forward
     
     if command -v firewall-cmd &>/dev/null; then
+        # CentOS 7+ 使用 firewalld
         firewall-cmd --permanent --add-port=443/tcp 2>/dev/null
         firewall-cmd --permanent --add-port=443/udp 2>/dev/null
+        # 开启NAT转发
+        firewall-cmd --permanent --direct --add-rule ipv4 nat POSTROUTING 0 -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
+        firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 0 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
         firewall-cmd --reload 2>/dev/null
     elif command -v iptables &>/dev/null; then
+        # CentOS 6 或手动安装 iptables
         iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
         iptables -I INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null
         iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
         iptables -I FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+        iptables -I FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null
     fi
     echo "${Info} 防火墙配置完成"
 }
