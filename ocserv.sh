@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.1.3"
+sh_ver="1.1.4"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -361,7 +361,7 @@ start_ocserv(){
 		return 1
 	fi
 	
-	${ocserv_path} -f -c ${conf} &
+	${ocserv_path} -f -c ${conf} >/dev/null 2>&1 &
 	sleep 2
 	
 	if [[ -f $PID_FILE ]]; then
