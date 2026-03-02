@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.2.0"
+sh_ver="1.2.1"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -200,17 +200,35 @@ EOFCONF
 		echo -e "${Info} 证书已存在: ${conf_file}/server-cert.pem"
 		cert_info=$(openssl x509 -in ${conf_file}/server-cert.pem -noout -subject 2>/dev/null || echo "无法读取")
 		echo -e "${Info} 证书信息: ${cert_info}"
-	else
-		echo -e "${Info} 开始生成自签名证书..."
-		cd ${conf_file}
-		
-		# 方式1: 用certtool
-		if command -v certtool &>/dev/null; then
-			echo -e "${Info} 使用certtool生成证书..."
-			tmpfile=$(mktemp)
-			cat > ${tmpfile} << 'EOFTEMPLATE'
-cn = "VPN"
-organization = "VPN"
+		read -p "是否重新生成证书? (y/n): " regen
+		[[ $regen != "y" ]] && return
+	fi
+	
+	echo -e "${Info} 开始生成自签名证书..."
+	
+	# 获取服务器公网IP作为证书CN
+	echo -e "${Info} 获取服务器公网IP..."
+	SERVER_IP=$(curl -s ip.io 2>/dev/null)
+	if [[ -z ${SERVER_IP} ]]; then
+		SERVER_IP=$(curl -s api.ip.sb 2>/dev/null)
+	fi
+	if [[ -z ${SERVER_IP} ]]; then
+		read -p "无法自动获取，请输入服务器公网IP作为证书CN: " SERVER_IP
+	fi
+	[[ -z ${SERVER_IP} ]] && SERVER_IP="VPN"
+	
+	echo -e "${Info} 证书CN: ${SERVER_IP}"
+	echo -e "${Info} 证书组织: 创泓度网络"
+	
+	cd ${conf_file}
+	
+	# 方式1: 用certtool
+	if command -v certtool &>/dev/null; then
+		echo -e "${Info} 使用certtool生成证书..."
+		tmpfile=$(mktemp)
+		cat > ${tmpfile} << EOFTEMPLATE
+cn = "${SERVER_IP}"
+organization = "创泓度网络"
 serial = 1
 expiration_days = 3650
 ca
@@ -219,24 +237,24 @@ cert_signing_key
 encryption_key
 tls_www_server
 EOFTEMPLATE
-			certtool --generate-privkey --outfile server-key.pem 2>&1 || echo "certtool错误"
-			certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>&1 || echo "certtool错误2"
-			rm -f ${tmpfile}
-			chmod 600 server-key.pem 2>/dev/null
-			[[ -s server-cert.pem ]] && echo -e "${Info} 自签名证书生成完成" || echo -e "${Error} certtool生成失败"
-		# 方式2: 用openssl
-		elif command -v openssl &>/dev/null; then
-			echo -e "${Info} 使用openssl生成证书..."
-			openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=VPN" 2>&1
-			chmod 600 server-key.pem 2>/dev/null
-			[[ -s server-cert.pem ]] && echo -e "${Info} openssl证书生成完成" || echo -e "${Error} openssl生成失败"
-		# 方式3: 系统证书备用
-		elif [[ -f /etc/pki/ocserv/public/server.crt ]]; then
-			echo -e "${Warn} 使用系统证书(不推荐)"
-			cp /etc/pki/ocserv/public/server.crt server-cert.pem 2>/dev/null
-			cp /etc/pki/ocserv/private/server.key server-key.pem 2>/dev/null
-			chmod 600 server-key.pem 2>/dev/null
-		fi
+		certtool --generate-privkey --outfile server-key.pem 2>&1 || echo "certtool错误"
+		certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>&1 || echo "certtool错误2"
+		rm -f ${tmpfile}
+		chmod 600 server-key.pem 2>/dev/null
+		[[ -s server-cert.pem ]] && echo -e "${Info} 自签名证书生成完成" || echo -e "${Error} certtool生成失败"
+	# 方式2: 用openssl
+	elif command -v openssl &>/dev/null; then
+		echo -e "${Info} 使用openssl生成证书..."
+		openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=创泓度网络" 2>&1
+		chmod 600 server-key.pem 2>/dev/null
+		[[ -s server-cert.pem ]] && echo -e "${Info} openssl证书生成完成" || echo -e "${Error} openssl生成失败"
+	# 方式3: 系统证书备用(不推荐)
+	elif [[ -f /etc/pki/ocserv/public/server.crt ]]; then
+		echo -e "${Warn} 使用系统证书(不推荐)"
+		cp /etc/pki/ocserv/public/server.crt server-cert.pem 2>/dev/null
+		cp /etc/pki/ocserv/private/server.key server-key.pem 2>/dev/null
+		chmod 600 server-key.pem 2>/dev/null
+	fi
 		
 		# 检查结果
 		if [[ ! -s server-cert.pem ]]; then
@@ -493,12 +511,25 @@ regen_cert(){
 	mv server-cert.pem server-cert.pem.bak 2>/dev/null
 	mv server-key.pem server-key.pem.bak 2>/dev/null
 	
+	# 获取服务器公网IP
+	echo -e "${Info} 获取服务器公网IP..."
+	SERVER_IP=$(curl -s ip.io 2>/dev/null)
+	if [[ -z ${SERVER_IP} ]]; then
+		SERVER_IP=$(curl -s api.ip.sb 2>/dev/null)
+	fi
+	if [[ -z ${SERVER_IP} ]]; then
+		read -p "无法自动获取，请输入服务器公网IP: " SERVER_IP
+	fi
+	[[ -z ${SERVER_IP} ]] && SERVER_IP="VPN"
+	
+	echo -e "${Info} 证书CN: ${SERVER_IP}"
+	
 	# 优先用certtool
 	if command -v certtool &>/dev/null; then
 		tmpfile=$(mktemp)
-		cat > ${tmpfile} << 'EOFTEMPLATE'
-cn = "VPN"
-organization = "VPN"
+		cat > ${tmpfile} << EOFTEMPLATE
+cn = "${SERVER_IP}"
+organization = "创泓度网络"
 serial = 1
 expiration_days = 3650
 ca
@@ -513,7 +544,7 @@ EOFTEMPLATE
 		chmod 600 server-key.pem 2>/dev/null
 	# 用openssl备用
 	elif command -v openssl &>/dev/null; then
-		openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=VPN" 2>/dev/null
+		openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=创泓度网络" 2>/dev/null
 		chmod 600 server-key.pem 2>/dev/null
 	fi
 	
