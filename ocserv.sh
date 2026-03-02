@@ -324,7 +324,7 @@ start)
         echo "VPN已在运行"
         exit 1
     fi
-    /usr/sbin/ocserv -f -c $CONF_FILE &
+    ${ocserv_path} -f -c $CONF_FILE &
     sleep 2
     if [[ -f $PID_FILE ]]; then
         echo "VPN启动成功"
@@ -371,7 +371,7 @@ After=network.target
 [Service]
 Type=forking
 PIDFile=/var/run/ocserv.pid
-ExecStart=/usr/sbin/ocserv -f -c /etc/ocserv/ocserv.conf
+ExecStart=${ocserv_path} -f -c /etc/ocserv/ocserv.conf
 ExecStop=/bin/kill -TERM $MAINPID
 [Install]
 WantedBy=multi-user.target
