@@ -3,13 +3,14 @@ PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
 export PATH
 
 #=================================================
-#	System Required: Debian/Ubuntu/CentOS/AlibabaCloud
-#	Description: ocserv VPN
-#	Version: 2.0.0
-#	Author: Modified for compatibility
+#	Description: ocserv AnyConnect VPN
+#	Version: 1.0.1
+#	Author: XZ
+#	URL: https://chuanghongdu.com
+#	支持系统: Debian/Ubuntu/CentOS/RedHat/AlibabaCloud
 #=================================================
 
-sh_ver="2.0.0"
+sh_ver="1.0.1"
 file="/usr/local/sbin/ocserv"
 conf_file="/usr/local/etc/ocserv"
 conf="${conf_file}/ocserv.conf"
@@ -31,6 +32,7 @@ check_root(){
 
 # 检查系统并设置包管理器
 check_sys(){
+	# 检测系统类型
 	if [[ -f /etc/redhat-release ]]; then
 		release="centos"
 	elif [[ -f /etc/lsb-release ]]; then
@@ -39,17 +41,21 @@ check_sys(){
 		release="debian"
 	elif cat /etc/issue 2>/dev/null | grep -qE -i "ubuntu"; then
 		release="ubuntu"
-	elif cat /etc/issue 2>/dev/null | grep -qE -i "centos|redhat|rocky|alma"; then
+	elif cat /etc/issue 2>/dev/null | grep -qE -i "centos|redhat|rocky|alma|anolis"; then
 		release="centos"
-	elif cat /etc/os-release 2>/dev/null | grep -qE "Alibaba"; then
+	elif cat /etc/os-release 2>/dev/null | grep -qE "Alibaba|Aliyun"; then
 		release="aliyun"
 	elif [[ -f /etc/alinux-release ]]; then
 		release="alinux"
+	elif [[ -f /etc/rocky-release ]]; then
+		release="centos"
+	elif [[ -f /etc/almalinux-release ]]; then
+		release="centos"
 	elif cat /proc/version 2>/dev/null | grep -qE "debian"; then
 		release="debian"
 	elif cat /proc/version 2>/dev/null | grep -qE "ubuntu"; then
 		release="ubuntu"
-	elif cat /proc/version 2>/dev/null | grep -qE "centos|redhat"; then
+	elif cat /proc/version 2>/dev/null | grep -qE "centos|redhat|rocky"; then
 		release="centos"
 	else
 		echo -e "${Error} 不支持的Linux系统" && exit 1
@@ -61,7 +67,11 @@ check_sys(){
 	elif [[ -f /etc/redhat-release ]]; then
 		centos_version=$(cat /etc/redhat-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
 	elif [[ -f /etc/aliyun-release ]]; then
-		centos_version=$(cat /etc/aliyun-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
+		centos_version=$(cat /etc/aliyun-release | grep -oE '[0-9]+\.[0-9]+' | head -1
+	elif [[ -f /etc/rocky-release ]]; then
+		centos_version=$(cat /etc/rocky-release | grep -oE '[0-9]+\.[0-9]+' | head -1
+	elif [[ -f /etc/almalinux-release ]]; then
+		centos_version=$(cat /etc/almalinux-release | grep -oE '[0-9]+\.[0-9]+' | head -1
 	fi
 	
 	echo -e "${Info} 检测到系统: ${release} ${centos_version}"
@@ -73,16 +83,49 @@ install_dependencies(){
 	
 	if [[ ${release} == "centos" ]] || [[ ${release} == "aliyun" ]] || [[ ${release} == "alinux" ]]; then
 		# CentOS / Aliyun / Alibaba Cloud
-		yum install -y epel-release
-		yum install -y vim net-tools pkgconfig
-		yum install -y gnutls-devel gnutls-utils
-		yum install -y libwrap-devel
-		yum install -y lz4-devel
-		yum install -y libseccomp-devel
-		yum install -y readline-devel
-		yum install -y libnl3-devel
-		yum install -y libev-devel
-		yum groupinstall -y "Development Tools"
+		# 先尝试修复yum源问题
+		if [[ -f /etc/centos-release ]]; then
+			# 备份并修复yum源
+			mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
+			# 使用阿里云源
+			cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
+[base]
+name=CentOS-\$releasever - Base - mirrors.aliyun.com
+failovermethod=priority
+baseurl=https://mirrors.aliyun.com/centos/\$releasever/os/\$basearch/
+gpgcheck=0
+enabled=1
+[updates]
+name=CentOS-\$releasever - Updates - mirrors.aliyun.com
+failovermethod=priority
+baseurl=https://mirrors.aliyun.com/centos/\$releasever/updates/\$basearch/
+gpgcheck=0
+enabled=1
+[extras]
+name=CentOS-\$releasever - Extras - mirrors.aliyun.com
+failovermethod=priority
+baseurl=https://mirrors.aliyun.com/centos/\$releasever/extras/\$basearch/
+gpgcheck=0
+enabled=1
+EOF
+			yum clean all
+		fi
+		
+		# 安装EPEL (忽略错误)
+		yum install -y epel-release || echo -e "${Warn} EPEL安装失败，继续..."
+		
+		# 安装基础工具 (使用--skip-broken跳过坏包)
+		yum install -y vim net-tools pkgconfig || echo -e "${Warn} 部分基础包安装失败"
+		
+		# 安装开发依赖
+		yum install -y gnutls-devel gnutls-utils || echo -e "${Warn} gnutls安装失败"
+		yum install -y libwrap-devel || true
+		yum install -y lz4-devel || true
+		yum install -y libseccomp-devel || true
+		yum install -y readline-devel || true
+		yum install -y libnl3-devel || true
+		yum install -y libev-devel || true
+		yum groupinstall -y "Development Tools" || true
 		
 	elif [[ ${release} == "debian" ]] || [[ ${release} == "ubuntu" ]]; then
 		# Debian / Ubuntu
@@ -94,10 +137,10 @@ install_dependencies(){
 	
 	# 尝试安装autoconf (某些系统需要)
 	if ! command -v autoconf &> /dev/null; then
-		if [[ ${release} == "centos" ]]; then
-			yum install -y autoconf
+		if [[ ${release} == "centos" ]] || [[ ${release} == "aliyun" ]]; then
+			yum install -y autoconf || true
 		else
-			apt-get install -y autoconf
+			apt-get install -y autoconf || true
 		fi
 	fi
 	
@@ -116,33 +159,51 @@ Download_ocserv(){
 	# 创建临时目录
 	mkdir -p /tmp/ocserv_build && cd /tmp/ocserv_build
 	
-	# 下载源码 - 多个备用地址
-	echo -e "${Info} 尝试下载 ocserv 源码..."
-	
 	# 尝试多个下载地址
 	download_success=false
 	
-	# 尝试GitHub
-	if ! wget -O ocserv-${ocserv_ver}.tar.xz "https://github.com/cisco/ocserv/releases/download/v${ocserv_ver}/ocserv-${ocserv_ver}.tar.xz" 2>/dev/null; then
-		# 尝试阿里云镜像
-		if ! wget -O ocserv-${ocserv_ver}.tar.xz "https://mirrors.aliyun.com/ocserv/ocserv-${ocserv_ver}.tar.xz" 2>/dev/null; then
-			# 尝试清华镜像
-			if ! wget -O ocserv-${ocserv_ver}.tar.xz "https://mirrors.tuna.tsinghua.edu.cn/github-release/cisco/ocserv/v${ocserv_ver}/ocserv-${ocserv_ver}.tar.xz" 2>/dev/null; then
-				echo -e "${Warn} 下载失败，尝试使用apt安装..."
-				if [[ ${release} == "debian" ]] || [[ ${release} == "ubuntu" ]]; then
-					apt-get install -y ocserv
-					if command -v ocserv &> /dev/null; then
-						echo -e "${Info} ocserv 安装成功"
-						return 0
-					fi
-				fi
-				echo -e "${Error} ocserv 源码下载失败"
-				exit 1
+	# 下载源列表
+	declare -a sources=(
+		"https://github.com/cisco/ocserv/releases/download/v${ocserv_ver}/ocserv-${ocserv_ver}.tar.xz"
+		"https://ftp.infradead.org/pub/ocserv/ocserv-${ocserv_ver}.tar.xz"
+		"https://mirrors.aliyun.com/ocserv/ocserv-${ocserv_ver}.tar.xz"
+		"https://mirrors.tuna.tsinghua.edu.cn/ocserv/ocserv-${ocserv_ver}.tar.xz"
+	)
+	
+	for src in "${sources[@]}"; do
+		echo -e "${Info} 尝试从 $src 下载..."
+		if wget -O ocserv-${ocserv_ver}.tar.xz "$src" 2>/dev/null && [[ -s "ocserv-${ocserv_ver}.tar.xz" ]]; then
+			download_success=true
+			break
+		fi
+	done
+	
+	if [[ $download_success == false ]]; then
+		# 尝试使用包管理器安装 (仅 Debian/Ubuntu)
+		if [[ ${release} == "debian" ]] || [[ ${release} == "ubuntu" ]]; then
+			echo -e "${Warn} 源码下载失败，尝试使用apt安装..."
+			apt-get update
+			apt-get install -y ocserv occtl
+			if command -v ocserv &> /dev/null; then
+				echo -e "${Info} ocserv 安装成功"
+				return 0
 			fi
 		fi
+		
+		# CentOS 尝试使用epel
+		if [[ ${release} == "centos" ]]; then
+			echo -e "${Warn} 尝试从EPEL安装..."
+			yum install -y epel-release
+			yum install -y ocserv
+			if command -v ocserv &> /dev/null; then
+				echo -e "${Info} ocserv 安装成功"
+				return 0
+			fi
+		fi
+		
+		echo -e "${Error} ocserv 安装失败"
+		exit 1
 	fi
-	
-	[[ ! -s "ocserv-${ocserv_ver}.tar.xz" ]] && echo -e "${Error} ocserv 源码下载失败" && exit 1
 	
 	tar -xJf ocserv-${ocserv_ver}.tar.xz
 	cd ocserv-${ocserv_ver}
@@ -378,6 +439,59 @@ EOSERVICE
 	fi
 	
 	echo -e "${Info} ocserv 配置完成"
+}
+
+# 配置防火墙
+config_firewall(){
+	echo -e "${Info} 开始配置防火墙..."
+	
+	# 获取配置的端口
+	tcp_port=$(grep "^tcp-port" ${conf} | awk '{print $3}')
+	udp_port=$(grep "^udp-port" ${conf} | awk '{print $3}')
+	
+	if [[ -z ${tcp_port} ]]; then
+		tcp_port=443
+	fi
+	if [[ -z ${udp_port} ]]; then
+		udp_port=443
+	fi
+	
+	# CentOS/RHEL 7+ (firewall-cmd)
+	if command -v firewall-cmd &> /dev/null; then
+		firewall-cmd --permanent --add-port=${tcp_port}/tcp
+		firewall-cmd --permanent --add-port=${udp_port}/udp
+		firewall-cmd --reload
+		echo -e "${Info} firewalld 端口已开放"
+	
+	# CentOS 6 (iptables)
+	elif [[ -f /etc/sysconfig/iptables ]]; then
+		iptables -I INPUT -p tcp --dport ${tcp_port} -j ACCEPT
+		iptables -I INPUT -p udp --dport ${udp_port} -j ACCEPT
+		service iptables save
+		echo -e "${Info} iptables 端口已开放"
+	
+	# Ubuntu/Debian (ufw)
+	elif command -v ufw &> /dev/null; then
+		ufw allow ${tcp_port}/tcp
+		ufw allow ${udp_port}/udp
+		echo -e "${Info} ufw 端口已开放"
+	
+	# 直接使用iptables (通用)
+	elif command -v iptables &> /dev/null; then
+		iptables -I INPUT -p tcp --dport ${tcp_port} -j ACCEPT
+		iptables -I INPUT -p udp --dport ${udp_port} -j ACCEPT
+		# 保存规则
+		if [[ -f /etc/iptables.rules ]]; then
+			iptables-save > /etc/iptables.rules
+		fi
+		echo -e "${Info} iptables 端口已开放"
+		
+	# 没有找到防火墙工具
+	else
+		echo -e "${Warn} 未找到防火墙配置工具，请手动开放端口 ${tcp_port}/tcp 和 ${udp_port}/udp"
+	fi
+	
+	echo -e "${Info} 防火墙配置完成"
 }
 
 # 添加用户
@@ -684,6 +798,7 @@ menu(){
 			install_dependencies
 			Download_ocserv
 			config_ocserv
+			config_firewall
 			;;
 		2)
 			config_ocserv
