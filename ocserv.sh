@@ -2,6 +2,7 @@
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
 echo "DEBUG: Starting script..."
 echo "DEBUG: Args: $@"
+echo "DEBUG: After args check"
 export PATH
 
 #=================================================
