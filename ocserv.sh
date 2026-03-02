@@ -10,7 +10,7 @@ export PATH
 #	支持系统: Debian/Ubuntu/CentOS/RedHat/AlibabaCloud/Rocky/Alma
 #=================================================
 
-sh_ver="1.0.3"
+sh_ver="1.0.4"
 
 # 自动检测ocserv安装路径
 detect_ocserv(){
@@ -590,21 +590,42 @@ menu(){
 	read -p "请输入选项 [0-15]: " choice
 	
 	case $choice in
-		1) check_root && check_sys && install_dependencies && Download_ocserv && config_ocserv && config_firewall ;;
-		2) check_root && config_ocserv && config_firewall ;;
+		1) 
+			check_root
+			check_sys
+			install_dependencies
+			Download_ocserv
+			config_ocserv
+			config_firewall
+			;;
+		2) 
+			check_root
+			config_ocserv
+			config_firewall
+			;;
 		3) start_ocserv ;;
 		4) stop_ocserv ;;
 		5) stop_ocserv; sleep 1; start_ocserv ;;
 		6) status_ocserv ;;
-		7) read -p "用户名: " u; read -p "密码: " p; add_user "$u" "$p" ;;
-		8) read -p "用户名: " u; del_user "$u" ;;
+		7) 
+			read -p "用户名: " u
+			read -p "密码: " p
+			add_user "$u" "$p"
+			;;
+		8) 
+			read -p "用户名: " u
+			del_user "$u"
+			;;
 		9) set_welcome ;;
 		10) view_users ;;
 		11) view_traffic ;;
 		12) set_port ;;
 		13) regen_cert ;;
 		14) view_log ;;
-		15) check_root && uninstall_ocserv ;;
+		15) 
+			check_root
+			uninstall_ocserv
+			;;
 		0) exit 0 ;;
 	esac
 	read -p "按回车继续..."
