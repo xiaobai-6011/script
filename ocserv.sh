@@ -154,7 +154,8 @@ config_firewall(){
     echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf 2>/dev/null
     sysctl -p 2>/dev/null
     
-    if command -v firewall-cmd &>/dev/null; then
+    # 检测防火墙 - 优先firewalld，然后nftables，最后iptables
+    if command -v firewall-cmd >/dev/null 2>&1; then
         echo -e "\033[32m[信息]\033[0m 配置 firewalld..."
         
         # 开放端口
@@ -180,7 +181,7 @@ config_firewall(){
         
         echo -e "\033[32m[信息]\033[0m firewalld 配置完成"
         
-    elif command -v nft &>/dev/null; then
+    elif command -v nft >/dev/null 2>&1 || [[ -d /sys/kernel/net/netfilter/nft_files ]]; then
         echo -e "\033[32m[信息]\033[0m 配置 nftables (CentOS Stream 10)..."
         
         # 添加NAT table
@@ -204,7 +205,7 @@ config_firewall(){
         
         echo -e "\033[32m[信息]\033[0m nftables 配置完成"
         
-    elif command -v iptables &>/dev/null; then
+    elif command -v iptables >/dev/null 2>&1; then
         echo -e "\033[32m[信息]\033[0m 配置 iptables..."
         
         # 开放端口
@@ -227,8 +228,11 @@ config_firewall(){
         
         echo -e "\033[32m[信息]\033[0m iptables 配置完成"
     else
-        echo -e "\033[31m[错误]\033[0m 未找到防火墙工具！"
-        echo -e "\033[33m[警告]\033[0m 请手动配置 nftables 或安装 iptables"
+        echo -e "\033[33m[警告]\033[0m 未找到防火墙工具，尝试使用nftables..."
+        # 尝试直接运行nft命令
+        nft -f /dev/stdin <<< "add table ip nat; add chain ip nat postrouting type nat hook postrouting priority srcnat; add rule ip nat postrouting ip saddr 172.16.0.0/22 masquerade" 2>/dev/null
+        nft -f /dev/stdin <<< "add table ip filter; add chain ip filter forward type filter hook forward priority filter; add rule ip filter forward iifname vpns+ accept; add rule ip filter forward oifname vpns+ accept" 2>/dev/null
+        echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
     fi
     echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
 }
