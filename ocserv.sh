@@ -67,11 +67,11 @@ check_sys(){
 	elif [[ -f /etc/redhat-release ]]; then
 		centos_version=$(cat /etc/redhat-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
 	elif [[ -f /etc/aliyun-release ]]; then
-		centos_version=$(cat /etc/aliyun-release | grep -oE '[0-9]+\.[0-9]+' | head -1
+		centos_version=$(cat /etc/aliyun-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
 	elif [[ -f /etc/rocky-release ]]; then
-		centos_version=$(cat /etc/rocky-release | grep -oE '[0-9]+\.[0-9]+' | head -1
+		centos_version=$(cat /etc/rocky-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
 	elif [[ -f /etc/almalinux-release ]]; then
-		centos_version=$(cat /etc/almalinux-release | grep -oE '[0-9]+\.[0-9]+' | head -1
+		centos_version=$(cat /etc/almalinux-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
 	fi
 	
 	echo -e "${Info} 检测到系统: ${release} ${centos_version}"
