@@ -271,6 +271,7 @@ socket-file = /var/run/ocserv.socket
 pid-file = ${PID_FILE}
 server-cert = ${conf_file}/server-cert.pem
 server-key = ${conf_file}/server-key.pem
+device = vpns
 ipv4-network = 172.16.0.0
 ipv4-netmask = 255.255.252.0
 dns = 8.8.8.8
@@ -279,23 +280,19 @@ route = 10.0.0.0/8
 route = 172.16.0.0/12
 route = 192.168.0.0/16
 keepalive = 990
-timeout = 660
 mtu = 1400
-try-mtu = 1400
 compression = true
-no-compression-http-proxy = ""
-cert-user-oid = 2.5.4.41
-welcome-message = "创泓度网络"
 max-clients = 0
-max-same-nodes = 0
 tunnel-all-dns = true
 EOFCONF
 
-	# 生成证书
-	if [[ ! -s "${conf_file}/server-cert.pem" ]]; then
+	# 生成证书(如果证书或私钥不存在)
+	if [[ ! -s "${conf_file}/server-cert.pem" ]] || [[ ! -s "${conf_file}/server-key.pem" ]]; then
 		echo -e "${Info} 生成证书..."
 		cd ${conf_file}
+		# 生成私钥
 		certtool --generate-privkey --outfile server-key.pem 2>/dev/null || true
+		# 生成自签名证书
 		certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template << 'EOFCERT' 2>/dev/null || true
 cn = VPN
 organization = 创泓度网络
@@ -478,19 +475,20 @@ del_user(){
 	echo -e "${Info} 用户 $1 已删除"
 }
 
-# 修改欢迎信息
+# 修改欢迎信息(通过banner文件)
 set_welcome(){
 	detect_conf
 	if [[ ! -f ${conf} ]]; then
 		echo -e "${Error} ocserv 未安装"
 		return 1
 	fi
-	echo -e "当前欢迎信息:"
-	grep "welcome-message" ${conf} 2>/dev/null || echo "无"
+	banner_file="${conf_file}/banner"
+	echo -e "当前可通过修改 banner 文件来设置欢迎信息"
 	read -p "输入新欢迎信息: " new_welcome
 	if [[ -n ${new_welcome} ]]; then
-		sed -i "s/.*welcome-message.*/welcome-message = \"${new_welcome}\"/" ${conf}
+		echo "${new_welcome}" > ${banner_file}
 		echo -e "${Info} 已修改为: ${new_welcome}"
+		echo -e "${Info} 文件位置: ${banner_file}"
 		read -p "是否重启? (y/n): " r
 		[[ $r == "y" ]] && { stop_ocserv; sleep 1; start_ocserv; }
 	fi
