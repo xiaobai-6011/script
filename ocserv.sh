@@ -609,7 +609,7 @@ uninstall_ocserv(){
     rm -f ${log_file}
     
     # 清理防火墙
-    if command -v firewall-cmd &>/dev/null; then
+    if command -v firewall-cmd >/dev/null 2>&1; then
         firewall-cmd --permanent --remove-port=443/tcp 2>/dev/null
         firewall-cmd --permanent --remove-port=443/udp 2>/dev/null
         firewall-cmd --permanent --remove-masquerade 2>/dev/null
@@ -617,8 +617,26 @@ uninstall_ocserv(){
         firewall-cmd --reload 2>/dev/null
     fi
     
+    # 清理 iptables 规则
+    if command -v iptables >/dev/null 2>&1; then
+        # 删除NAT规则
+        iptables -t nat -D POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
+        # 删除转发规则
+        iptables -D FORWARD -i vpns+ -j ACCEPT 2>/dev/null
+        iptables -D FORWARD -o vpns+ -j ACCEPT 2>/dev/null
+        iptables -D FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+        iptables -D FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null
+        # 删除端口规则
+        iptables -D INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
+        iptables -D INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null
+        # 删除SSH bypass规则
+        iptables -D INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+        # 保存
+        iptables-save > /etc/sysconfig/iptables 2>/dev/null
+    fi
+    
     # 清理 nftables
-    if command -v nft &>/dev/null; then
+    if command -v nft >/dev/null 2>&1; then
         nft delete table ip nat 2>/dev/null
         nft delete table ip filter 2>/dev/null
         rm -f /etc/nftables.conf
