@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.1.1"
+sh_ver="1.1.2"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -192,20 +192,19 @@ max-clients = 0
 tunnel-all-dns = true
 EOFCONF
 
-	# 生成证书 - 使用文件方式避免模板解析问题
+	# 生成证书 - 多种方式尝试
 	if [[ ! -s "${conf_file}/server-cert.pem" ]] || [[ ! -s "${conf_file}/server-key.pem" ]]; then
 		echo -e "${Info} 生成证书..."
 		cd ${conf_file}
 		
-		# 尝试复制系统证书
+		# 方式1: 复制系统证书
 		if [[ -f /etc/pki/ocserv/public/server.crt ]]; then
 			cp /etc/pki/ocserv/public/server.crt server-cert.pem 2>/dev/null
 			cp /etc/pki/ocserv/private/server.key server-key.pem 2>/dev/null
 			chmod 600 server-key.pem 2>/dev/null
 			echo -e "${Info} 使用系统证书"
-		# 用certtool生成
+		# 方式2: 用certtool
 		elif command -v certtool &>/dev/null; then
-			# 创建临时模板文件
 			tmpfile=$(mktemp)
 			cat > ${tmpfile} << 'EOFTEMPLATE'
 cn = "VPN"
@@ -222,9 +221,21 @@ EOFTEMPLATE
 			certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>/dev/null
 			rm -f ${tmpfile}
 			chmod 600 server-key.pem 2>/dev/null
-			echo -e "${Info} 自签名证书生成完成"
-		else
-			echo -e "${Warn} 无法生成证书，请手动配置"
+			[[ -s server-cert.pem ]] && echo -e "${Info} certtool证书生成完成"
+		# 方式3: 用openssl(备用)
+		fi
+		
+		# 如果上面都失败了，用openssl生成
+		if [[ ! -s server-cert.pem ]] && command -v openssl &>/dev/null; then
+			echo -e "${Info} 使用openssl生成证书..."
+			openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=VPN" 2>/dev/null
+			chmod 600 server-key.pem 2>/dev/null
+			[[ -s server-cert.pem ]] && echo -e "${Info} openssl证书生成完成"
+		fi
+		
+		# 检查结果
+		if [[ ! -s server-cert.pem ]]; then
+			echo -e "${Error} 证书生成失败，请手动配置"
 		fi
 	fi
 	
