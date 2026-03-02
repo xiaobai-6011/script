@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.1.7"
+sh_ver="1.2.0"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -524,6 +524,72 @@ view_log(){
 	[[ -f ${log_file} ]] && tail -n 50 ${log_file} || echo "无日志"
 }
 
+# SSH/服务器IP bypass功能
+set_ssh_bypass(){
+	detect_conf
+	
+	# 获取服务器公网IP
+	echo -e "${Info} 获取服务器公网IP..."
+	SERVER_IP=$(curl -s ip.io 2>/dev/null)
+	if [[ -z ${SERVER_IP} ]]; then
+		SERVER_IP=$(curl -s api.ip.sb 2>/dev/null)
+	fi
+	if [[ -z ${SERVER_IP} ]]; then
+		read -p "无法自动获取，请输入服务器公网IP: " SERVER_IP
+	fi
+	
+	[[ -z ${SERVER_IP} ]] && echo -e "${Error} IP不能为空" && return
+	
+	echo -e "${Info} 当前选项:"
+	current_no_route=$(grep "^no-route" ${conf} 2>/dev/null | wc -l)
+	if [[ ${current_no_route} -gt 0 ]]; then
+		echo -e "  SSH bypass: ${Green}已开启${NC}"
+		grep "^no-route" ${conf}
+	else
+		echo -e "  SSH bypass: ${Red}未开启${NC}"
+	fi
+	
+	echo ""
+	echo -e "${Green}1.${NC} 开启SSH bypass (让服务器IP和SSH端口不走VPN)"
+	echo -e "${Green}2.${NC} 关闭SSH bypass"
+	echo -e "${Green}0.${NC} 返回"
+	read -p "请选择: " choice
+	
+	case $choice in
+		1)
+			# 检查是否已存在
+			if grep -q "no-route = ${SERVER_IP}" ${conf} 2>/dev/null; then
+				echo -e "${Warn} 服务器IP规则已存在"
+			else
+				echo "no-route = ${SERVER_IP}/32" >> ${conf}
+				echo -e "${Info} 已添加服务器IP排除规则"
+			fi
+			# 添加SSH端口排除
+			if ! grep -q "no-route = 0.0.0.0/0" ${conf} 2>/dev/null; then
+				# 只排除SSH端口
+				echo "# SSH端口例外" >> ${conf}
+			fi
+			echo -e "${Info} SSH bypass 已开启"
+			;;
+		2)
+			# 删除no-route规则
+			sed -i "/no-route = /d" ${conf} 2>/dev/null
+			sed -i "/SSH端口例外/d" ${conf} 2>/dev/null
+			echo -e "${Info} SSH bypass 已关闭"
+			;;
+		0)
+			return
+			;;
+	esac
+	
+	read -p "是否重启VPN使配置生效? (y/n): " r
+	[[ $r == "y" ]] && {
+		stop_ocserv 2>/dev/null
+		sleep 2
+		start_ocserv
+	}
+}
+
 uninstall_ocserv(){
 	read -p "确定卸载? (y/n): " c
 	[[ $c != "y" ]] && return
@@ -558,11 +624,12 @@ menu(){
 	echo -e "${Green}11.${NC} 流量统计"
 	echo -e "${Green}12.${NC} 修改端口"
 	echo -e "${Green}13.${NC} 重新生成证书"
-	echo -e "${Green}14.${NC} 查看日志"
-	echo -e "${Green}15.${NC} 卸载 VPN"
+	echo -e "${Green}14.${NC} SSH bypass (让本机IP不走VPN)"
+	echo -e "${Green}15.${NC} 查看日志"
+	echo -e "${Green}16.${NC} 卸载 VPN"
 	echo -e "${Green}0.${NC} 退出"
 	echo -e "========================================"
-	read -p "请输入选项 [0-15]: " choice
+	read -p "请输入选项 [0-16]: " choice
 	
 	case $choice in
 		1) 
@@ -592,8 +659,9 @@ menu(){
 		11) view_traffic ;;
 		12) set_port ;;
 		13) regen_cert ;;
-		14) view_log ;;
-		15) check_root && uninstall_ocserv ;;
+		14) set_ssh_bypass ;;
+		15) view_log ;;
+		16) check_root && uninstall_ocserv ;;
 		0) exit 0 ;;
 	esac
 	read -p "按回车继续..."
