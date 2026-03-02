@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-echo "Starting..."
+echo "DEBUG1"
+echo "DEBUG2"
+echo "DEBUG3"
+echo "DEBUG4"
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
+echo "After PATH"
 export PATH
 
 #=================================================
@@ -998,6 +1002,7 @@ if [[ $# -gt 0 ]]; then
 		*) echo "用法: $0 {install|start|stop|restart|status|add|del}" ;;
 	esac
 else
+	echo "DEBUG: Calling menu"
 	menu
 fi
 }
