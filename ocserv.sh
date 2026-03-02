@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.3.3"
+sh_ver="1.3.4"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -218,7 +218,7 @@ EOFCONF
 	[[ -z ${SERVER_IP} ]] && SERVER_IP="VPN"
 	
 	echo -e "${Info} 证书CN: ${SERVER_IP}"
-	echo -e "${Info} 证书组织: 创泓度网络"
+	echo -e "${Info} 证书组织: 小白"
 	
 	cd ${conf_file}
 	
@@ -228,7 +228,7 @@ EOFCONF
 		tmpfile=$(mktemp)
 		cat > ${tmpfile} << EOFTEMPLATE
 cn = "${SERVER_IP}"
-organization = "创泓度网络"
+organization = "小白"
 serial = 1
 expiration_days = 3650
 ca
@@ -245,7 +245,7 @@ EOFTEMPLATE
 	# 方式2: 用openssl
 	elif command -v openssl &>/dev/null; then
 		echo -e "${Info} 使用openssl生成证书..."
-		openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=创泓度网络" 2>&1
+		openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=小白" 2>&1
 		chmod 600 server-key.pem 2>/dev/null
 		[[ -s server-cert.pem ]] && echo -e "${Info} openssl证书生成完成" || echo -e "${Error} openssl生成失败"
 	# 方式3: 系统证书备用(不推荐)
@@ -610,7 +610,7 @@ regen_cert(){
 		tmpfile=$(mktemp)
 		cat > ${tmpfile} << EOFTEMPLATE
 cn = "${SERVER_IP}"
-organization = "创泓度网络"
+organization = "小白"
 serial = 1
 expiration_days = 3650
 ca
@@ -625,7 +625,7 @@ EOFTEMPLATE
 		chmod 600 server-key.pem 2>/dev/null
 	# 用openssl备用
 	elif command -v openssl &>/dev/null; then
-		openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=创泓度网络" 2>/dev/null
+		openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=小白" 2>/dev/null
 		chmod 600 server-key.pem 2>/dev/null
 	fi
 	
