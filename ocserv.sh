@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.2.1"
+sh_ver="1.3.0"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -488,11 +488,69 @@ set_welcome(){
 }
 
 view_users(){
-	echo "当前连接数: $(netstat -an | grep ':443 ' | grep ESTABLISHED | wc -l)"
+	echo "========================================"
+	echo "   VPN 在线用户列表"
+	echo "========================================"
+	
+	# 获取连接信息
+	connections=$(netstat -an | grep ':443 ' | grep ESTABLISHED)
+	count=$(echo "$connections" | wc -l)
+	
+	if [[ ${count} -eq 0 ]]; then
+		echo "当前在线用户: 0"
+	else
+		echo "当前在线用户: ${count}"
+		echo ""
+		echo "编号 | 用户名 | VPN IP | 客户端IP | 连接时间"
+		echo "------------------------------------------"
+		
+		# 使用occtl获取详细信息
+		if command -v occtl &>/dev/null; then
+			occtl show users 2>/dev/null | head -20
+		else
+			# 手动解析
+			i=1
+			echo "$connections" | while read line; do
+				client_ip=$(echo "$line" | awk '{print $5}' | cut -d: -f1)
+				vpn_ip="未知"
+				echo "$i | $vpn_ip | $client_ip | -"
+				i=$((i+1))
+			done
+		fi
+	fi
+	echo "========================================"
 }
 
 view_traffic(){
-	view_users
+	echo "========================================"
+	echo "   VPN 流量统计"
+	echo "========================================"
+	
+	# 获取连接信息
+	connections=$(netstat -an | grep ':443 ' | grep ESTABLISHED)
+	count=$(echo "$connections" | wc -l)
+	
+	if [[ ${count} -eq 0 ]]; then
+		echo "当前在线: 0"
+	else
+		echo "当前在线: ${count} 用户"
+		echo ""
+		
+		# 尝试用occtl获取流量
+		if command -v occtl &>/dev/null; then
+			occtl show stats 2>/dev/null | head -30
+		else
+			# 显示基本信息
+			echo "IP地址 | 接收 | 发送"
+			echo "------------------------"
+			echo "$connections" | awk '{print $5}' | cut -d: -f1 | sort -u | while read ip; do
+				rx="0 MB"
+				tx="0 MB"
+				echo "$ip | $rx | $tx"
+			done
+		fi
+	fi
+	echo "========================================"
 }
 
 set_port(){
@@ -553,6 +611,100 @@ EOFTEMPLATE
 
 view_log(){
 	[[ -f ${log_file} ]] && tail -n 50 ${log_file} || echo "无日志"
+}
+
+# 设置限速
+set_speed_limit(){
+	detect_conf
+	
+	echo "========================================"
+	echo "   VPN 用户限速设置"
+	echo "========================================"
+	echo "${Green}1.${NC} 开启限速 (每个用户 10MB/s)"
+	echo "${Green}2.${NC} 开启限速 (每个用户 5MB/s)"
+	echo "${Green}3.${NC} 开启限速 (每个用户 1MB/s)"
+	echo "${Green}4.${NC} 关闭限速"
+	echo "${Green}0.${NC} 返回"
+	echo "========================================"
+	read -p "请选择: " choice
+	
+	case $choice in
+		1)
+			# 添加限速配置
+			echo "max-same-nodes = 0" >> ${conf}
+			echo "bandwidth = 10000000" >> ${conf}  # 10MB/s
+			echo -e "${Info} 已开启限速 10MB/s"
+			;;
+		2)
+			echo "max-same-nodes = 0" >> ${conf}
+			echo "bandwidth = 5000000" >> ${conf}  # 5MB/s
+			echo -e "${Info} 已开启限速 5MB/s"
+			;;
+		3)
+			echo "max-same-nodes = 0" >> ${conf}
+			echo "bandwidth = 1000000" >> ${conf}  # 1MB/s
+			echo -e "${Info} 已开启限速 1MB/s"
+			;;
+		4)
+			sed -i "/bandwidth/d" ${conf}
+			echo -e "${Info} 已关闭限速"
+			;;
+		0)
+			return
+			;;
+	esac
+	
+	read -p "是否重启VPN使配置生效? (y/n): " r
+	[[ $r == "y" ]] && {
+		stop_ocserv 2>/dev/null
+		sleep 2
+		start_ocserv
+	}
+}
+
+# 设置欢迎信息
+set_welcome(){
+	detect_conf
+	banner_file="${conf_file}/banner"
+	
+	echo "========================================"
+	echo "   欢迎信息设置"
+	echo "========================================"
+	echo "当前欢迎信息文件: ${banner_file}"
+	
+	if [[ -f ${banner_file} ]]; then
+		echo "当前内容:"
+		cat ${banner_file}
+		echo ""
+	fi
+	
+	echo "请选择:"
+	echo "${Green}1.${NC} 设置欢迎信息"
+	echo "${Green}2.${NC} 清空欢迎信息"
+	echo "${Green}0.${NC} 返回"
+	read -p "请选择: " choice
+	
+	case $choice in
+		1)
+			read -p "输入欢迎信息: " welcome_msg
+			[[ -n ${welcome_msg} ]] && echo "${welcome_msg}" > ${banner_file}
+			echo -e "${Info} 欢迎信息已设置"
+			;;
+		2)
+			> ${banner_file}
+			echo -e "${Info} 欢迎信息已清空"
+			;;
+		0)
+			return
+			;;
+	esac
+	
+	read -p "是否重启VPN使配置生效? (y/n): " r
+	[[ $r == "y" ]] && {
+		stop_ocserv 2>/dev/null
+		sleep 2
+		start_ocserv
+	}
 }
 
 # SSH/服务器IP bypass功能
@@ -654,13 +806,14 @@ menu(){
 	echo -e "${Green}10.${NC} 查看在线用户"
 	echo -e "${Green}11.${NC} 流量统计"
 	echo -e "${Green}12.${NC} 修改端口"
-	echo -e "${Green}13.${NC} 重新生成证书"
-	echo -e "${Green}14.${NC} SSH bypass (让本机IP不走VPN)"
-	echo -e "${Green}15.${NC} 查看日志"
-	echo -e "${Green}16.${NC} 卸载 VPN"
+	echo -e "${Green}13.${NC} 设置限速"
+	echo -e "${Green}14.${NC} 重新生成证书"
+	echo -e "${Green}15.${NC} SSH bypass"
+	echo -e "${Green}16.${NC} 查看日志"
+	echo -e "${Green}17.${NC} 卸载 VPN"
 	echo -e "${Green}0.${NC} 退出"
 	echo -e "========================================"
-	read -p "请输入选项 [0-16]: " choice
+	read -p "请输入选项 [0-17]: " choice
 	
 	case $choice in
 		1) 
@@ -689,10 +842,11 @@ menu(){
 		10) view_users ;;
 		11) view_traffic ;;
 		12) set_port ;;
-		13) regen_cert ;;
-		14) set_ssh_bypass ;;
-		15) view_log ;;
-		16) check_root && uninstall_ocserv ;;
+		13) set_speed_limit ;;
+		14) regen_cert ;;
+		15) set_ssh_bypass ;;
+		16) view_log ;;
+		17) check_root && uninstall_ocserv ;;
 		0) exit 0 ;;
 	esac
 	read -p "按回车继续..."
