@@ -20,6 +20,8 @@ echo "After sh_ver"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
+	 echo "DEBUG: detect_ocserv defined"
+echo "DEBUG: In detect_ocserv"
 	ocserv_path=""
 	
 	# 1. 直接尝试运行ocserv，看哪个路径有效
