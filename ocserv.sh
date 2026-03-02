@@ -55,7 +55,7 @@ config_ocserv(){
     echo "[信息] 配置 ocserv..."
     mkdir -p ${conf_file}
     
-    cat > ${conf} << 'EOF'
+    cat > ${conf} << EOF
 auth = "plain[${passwd_file}]"
 tcp-port = 443
 udp-port = 443
