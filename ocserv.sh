@@ -9,7 +9,7 @@ export PATH
 #	URL: https://chuanghongdu.com
 #=================================================
 
-sh_ver="1.1.4"
+sh_ver="1.1.6"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
@@ -194,19 +194,13 @@ max-clients = 0
 tunnel-all-dns = true
 EOFCONF
 
-	# 生成证书 - 多种方式尝试
+	# 生成证书 - 自签名优先
 	if [[ ! -s "${conf_file}/server-cert.pem" ]] || [[ ! -s "${conf_file}/server-key.pem" ]]; then
-		echo -e "${Info} 生成证书..."
+		echo -e "${Info} 生成自签名证书..."
 		cd ${conf_file}
 		
-		# 方式1: 复制系统证书
-		if [[ -f /etc/pki/ocserv/public/server.crt ]]; then
-			cp /etc/pki/ocserv/public/server.crt server-cert.pem 2>/dev/null
-			cp /etc/pki/ocserv/private/server.key server-key.pem 2>/dev/null
-			chmod 600 server-key.pem 2>/dev/null
-			echo -e "${Info} 使用系统证书"
-		# 方式2: 用certtool
-		elif command -v certtool &>/dev/null; then
+		# 方式1: 用certtool
+		if command -v certtool &>/dev/null; then
 			tmpfile=$(mktemp)
 			cat > ${tmpfile} << 'EOFTEMPLATE'
 cn = "VPN"
@@ -223,16 +217,18 @@ EOFTEMPLATE
 			certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>/dev/null
 			rm -f ${tmpfile}
 			chmod 600 server-key.pem 2>/dev/null
-			[[ -s server-cert.pem ]] && echo -e "${Info} certtool证书生成完成"
-		# 方式3: 用openssl(备用)
-		fi
-		
-		# 如果上面都失败了，用openssl生成
-		if [[ ! -s server-cert.pem ]] && command -v openssl &>/dev/null; then
-			echo -e "${Info} 使用openssl生成证书..."
+			[[ -s server-cert.pem ]] && echo -e "${Info} 自签名证书生成完成"
+		# 方式2: 用openssl
+		elif command -v openssl &>/dev/null; then
 			openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=VPN" 2>/dev/null
 			chmod 600 server-key.pem 2>/dev/null
 			[[ -s server-cert.pem ]] && echo -e "${Info} openssl证书生成完成"
+		# 方式3: 系统证书备用
+		elif [[ -f /etc/pki/ocserv/public/server.crt ]]; then
+			cp /etc/pki/ocserv/public/server.crt server-cert.pem 2>/dev/null
+			cp /etc/pki/ocserv/private/server.key server-key.pem 2>/dev/null
+			chmod 600 server-key.pem 2>/dev/null
+			echo -e "${Info} 使用系统证书"
 		fi
 		
 		# 检查结果
@@ -325,6 +321,10 @@ config_firewall(){
 	tcp_port=${tcp_port:-443}
 	udp_port=${udp_port:-443}
 	
+	# 开启IP转发
+	echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
+	sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+	
 	if command -v firewall-cmd &>/dev/null; then
 		firewall-cmd --permanent --add-port=${tcp_port}/tcp 2>/dev/null || true
 		firewall-cmd --permanent --add-port=${udp_port}/udp 2>/dev/null || true
@@ -333,8 +333,13 @@ config_firewall(){
 		ufw allow ${tcp_port}/tcp 2>/dev/null || true
 		ufw allow ${udp_port}/udp 2>/dev/null || true
 	elif command -v iptables &>/dev/null; then
+		# 开放端口
 		iptables -I INPUT -p tcp --dport ${tcp_port} -j ACCEPT 2>/dev/null || true
 		iptables -I INPUT -p udp --dport ${udp_port} -j ACCEPT 2>/dev/null || true
+		# NAT转发
+		iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null || true
+		iptables -I FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null || true
+		iptables -I FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null || true
 	fi
 	echo -e "${Info} 防火墙配置完成"
 }
@@ -435,22 +440,32 @@ regen_cert(){
 	cd ${conf_file}
 	mv server-cert.pem server-cert.pem.bak 2>/dev/null
 	mv server-key.pem server-key.pem.bak 2>/dev/null
+	
+	# 优先用certtool
 	if command -v certtool &>/dev/null; then
-		certtool --generate-privkey --outfile server-key.pem 2>/dev/null
-		certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template << 'EOFCERT' 2>/dev/null
-cn = VPN
-organization = 创泓度网络
+		tmpfile=$(mktemp)
+		cat > ${tmpfile} << 'EOFTEMPLATE'
+cn = "VPN"
+organization = "VPN"
 serial = 1
-activation_time = 2024-01-01 00:00:00
-expiration_time = 2030-12-31 23:59:59
+expiration_days = 3650
 ca
 signing_key
+cert_signing_key
 encryption_key
 tls_www_server
-EOFCERT
+EOFTEMPLATE
+		certtool --generate-privkey --outfile server-key.pem 2>/dev/null
+		certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>/dev/null
+		rm -f ${tmpfile}
+		chmod 600 server-key.pem 2>/dev/null
+	# 用openssl备用
+	elif command -v openssl &>/dev/null; then
+		openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=VPN" 2>/dev/null
 		chmod 600 server-key.pem 2>/dev/null
 	fi
-	echo -e "${Info} 证书已重新生成"
+	
+	echo -e "${Info} 自签名证书已重新生成"
 }
 
 view_log(){
