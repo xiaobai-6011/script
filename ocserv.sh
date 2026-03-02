@@ -72,6 +72,8 @@ keepalive = 990
 mtu = 1400
 max-clients = 0
 tunnel-all-dns = true
+# 不强制所有流量走VPN，只走配置的路由
+# no-split-all-dns = true
 EOF
     
     # 生成证书
@@ -146,23 +148,35 @@ EOFTEMPLATE
 # 防火墙
 config_firewall(){
     echo -e "\033[32m[信息]\033[0m 配置防火墙..."
+    
+    # 开启IP转发
     echo 1 > /proc/sys/net/ipv4/ip_forward
+    echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf 2>/dev/null
     
     if command -v firewall-cmd &>/dev/null; then
         # CentOS 7+ 使用 firewalld
+        echo -e "\033[32m[信息]\033[0m 配置 firewalld..."
         firewall-cmd --permanent --add-port=443/tcp 2>/dev/null
         firewall-cmd --permanent --add-port=443/udp 2>/dev/null
         # 开启NAT转发
         firewall-cmd --permanent --direct --add-rule ipv4 nat POSTROUTING 0 -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
+        firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 0 -i vpns+ -j ACCEPT 2>/dev/null
+        firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 0 -o vpns+ -j ACCEPT 2>/dev/null
         firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 0 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
         firewall-cmd --reload 2>/dev/null
+        
     elif command -v iptables &>/dev/null; then
         # CentOS 6 或手动安装 iptables
+        echo -e "\033[32m[信息]\033[0m 配置 iptables..."
         iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
         iptables -I INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null
+        # NAT转发
         iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
-        iptables -I FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
-        iptables -I FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null
+        # 转发
+        iptables -A FORWARD -i vpns+ -j ACCEPT 2>/dev/null
+        iptables -A FORWARD -o vpns+ -j ACCEPT 2>/dev/null
+        iptables -A FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+        iptables -A FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null
     fi
     echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
 }
@@ -269,6 +283,17 @@ view_traffic(){
         return
     fi
     
+    # 检查NAT规则
+    echo -e "\033[32m[信息]\033[0m 检查NAT转发规则..."
+    if command -v iptables &>/dev/null; then
+        iptables -t nat -L -n 2>/dev/null | grep -q "MASQUERADE" && echo -e "\033[32m[√]\033[0m NAT Masquerade 已配置" || echo -e "\033[31m[×]\033[0m NAT Masquerade 未配置"
+    fi
+    
+    # 检查IP转发
+    echo -e "\033[32m[信息]\033[0m 检查IP转发..."
+    ip_forward=$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)
+    [[ "$ip_forward" == "1" ]] && echo -e "\033[32m[√]\033[0m IP转发已开启" || echo -e "\033[31m[×]\033[0m IP转发未开启"
+    
     # 尝试从/proc获取流量
     if [[ -d /proc/net/nf_conntrack ]]; then
         traffic=$(cat /proc/net/nf_conntrack 2>/dev/null | grep ocserv | wc -l)
@@ -278,6 +303,36 @@ view_traffic(){
     # 显示网络接口统计
     echo -e "\033[32m[信息]\033[0m 网络接口统计:"
     ip -s link show 2>/dev/null | grep -A1 "tun\|vpns" || echo "未找到VPN接口"
+}
+
+# 修复网络
+fix_network(){
+    echo -e "\033[32m[信息]\033[0m 修复网络..."
+    
+    # 开启IP转发
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+    
+    if command -v iptables &>/dev/null; then
+        # 清理旧规则
+        iptables -t nat -F POSTROUTING 2>/dev/null
+        iptables -F FORWARD 2>/dev/null
+        
+        # 添加新规则
+        iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE
+        iptables -A FORWARD -i vpns+ -j ACCEPT
+        iptables -A FORWARD -o vpns+ -j ACCEPT
+        iptables -A FORWARD -s 172.16.0.0/22 -j ACCEPT
+        iptables -A FORWARD -d 172.16.0.0/22 -j ACCEPT
+        
+        echo -e "\033[32m[信息]\033[0m iptables 规则已修复"
+    fi
+    
+    if command -v firewall-cmd &>/dev/null; then
+        firewall-cmd --reload
+        echo -e "\033[32m[信息]\033[0m firewalld 已重载"
+    fi
+    
+    echo -e "\033[32m[信息]\033[0m 网络修复完成，请重新连接VPN"
 }
 
 # 重新生成证书
@@ -383,10 +438,11 @@ menu(){
     echo "11. 流量统计"
     echo "12. 重新生成证书"
     echo "13. 查看日志"
-    echo "14. 卸载 VPN"
+    echo "14. 修复网络"
+    echo "15. 卸载 VPN"
     echo "0.  退出"
     echo "========================================"
-    read -p "请输入选项 [0-14]: " choice
+    read -p "请输入选项 [0-15]: " choice
     
     case $choice in
         1)
@@ -408,7 +464,8 @@ menu(){
         11) view_traffic ;;
         12) regen_cert ;;
         13) view_log ;;
-        14) uninstall_ocserv ;;
+        14) fix_network ;;
+        15) uninstall_ocserv ;;
         0) exit 0 ;;
     esac
     
