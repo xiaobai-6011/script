@@ -4,7 +4,7 @@
 
 # 检查root
 if [[ $EUID -ne 0 ]]; then
-   echo "[错误] 请使用ROOT用户运行"
+   echo -e "\033[31m[错误] 请使用ROOT用户运行\033[0m"
    exit 1
 fi
 
@@ -15,32 +15,27 @@ conf_file="/etc/ocserv"
 conf="${conf_file}/ocserv.conf"
 passwd_file="${conf_file}/ocpasswd"
 
-Green='\033[32m' && Red='\033[31m' && Yellow='\033[33m' && NC='\033[0m'
-Info="${Green}[信息]${NC}"
-Error="${Red}[错误]${NC}"
-Warn="${Yellow}[警告]${NC}"
-
 # 检测系统
 detect_sys(){
     if [[ -f /etc/centos-stream-release ]]; then
-        echo "${Info} 检测到: CentOS Stream"
+        echo -e "\033[32m[信息]\033[0m 检测到: CentOS Stream"
         release="centos-stream"
     elif [[ -f /etc/redhat-release ]]; then
-        echo "${Info} 检测到: CentOS/RHEL"
+        echo -e "\033[32m[信息]\033[0m 检测到: CentOS/RHEL"
         release="centos"
     elif [[ -f /etc/os-release ]]; then
-        grep -q "CentOS Stream" /etc/os-release && echo "${Info} 检测到: CentOS Stream" && release="centos-stream"
-        grep -q "ID=\"centos\"" /etc/os-release && echo "${Info} 检测到: CentOS" && release="centos"
+        grep -q "CentOS Stream" /etc/os-release && echo -e "\033[32m[信息]\033[0m 检测到: CentOS Stream" && release="centos-stream"
+        grep -q "ID=\"centos\"" /etc/os-release && echo -e "\033[32m[信息]\033[0m 检测到: CentOS" && release="centos"
     fi
-    echo "${Info} 系统: ${release:-unknown}"
+    echo -e "\033[32m[信息]\033[0m 系统: ${release:-unknown}"
 }
 
 # 安装依赖
 install_deps(){
-    echo "${Info} 开始安装依赖..."
+    echo -e "\033[32m[信息]\033[0m 开始安装依赖..."
     
     if [[ "${release}" == "centos-stream" ]]; then
-        echo "${Info} 使用 Copr 源安装..."
+        echo -e "\033[32m[信息]\033[0m 使用 Copr 源安装..."
         dnf install -y dnf-plugins-core 2>/dev/null
         dnf copr enable -y @ocserv/ocserv 2>/dev/null
         dnf install -y ocserv 2>/dev/null
@@ -52,12 +47,12 @@ install_deps(){
         apt-get install -y ocserv
     fi
     
-    echo "${Info} 安装完成"
+    echo -e "\033[32m[信息]\033[0m 安装完成"
 }
 
 # 配置
 config_ocserv(){
-    echo "${Info} 配置 ocserv..."
+    echo -e "\033[32m[信息]\033[0m 配置 ocserv..."
     mkdir -p ${conf_file}
     
     cat > ${conf} << EOF
@@ -80,18 +75,77 @@ tunnel-all-dns = true
 EOF
     
     # 生成证书
-    if [[ ! -f "${conf_file}/server-cert.pem" ]]; then
-        echo "${Info} 生成证书..."
-        cd ${conf_file}
-        openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=小白" 2>/dev/null
+    echo -e "\033[32m[信息]\033[0m 检查证书..."
+    
+    # 检查现有证书
+    if [[ -s "${conf_file}/server-cert.pem" ]]; then
+        echo -e "\033[32m[信息]\033[0m 证书已存在: ${conf_file}/server-cert.pem"
+        cert_info=$(openssl x509 -in ${conf_file}/server-cert.pem -noout -subject 2>/dev/null || echo "未知")
+        echo -e "\033[32m[信息]\033[0m 证书信息: ${cert_info}"
+        read -p "是否重新生成证书? (y/n): " regen
+        [[ $regen != "y" ]] && return
     fi
     
-    echo "${Info} 配置完成"
+    # 获取服务器公网IP
+    echo -e "\033[32m[信息]\033[0m 获取服务器公网IP..."
+    SERVER_IP=$(curl -s --max-time 5 ip.io 2>/dev/null)
+    if [[ -z ${SERVER_IP} ]]; then
+        SERVER_IP=$(curl -s --max-time 5 api.ip.sb 2>/dev/null)
+    fi
+    if [[ -z ${SERVER_IP} ]]; then
+        read -p "无法自动获取，请输入服务器公网IP: " SERVER_IP
+    fi
+    [[ -z ${SERVER_IP} ]] && SERVER_IP="VPN"
+    
+    echo -e "\033[32m[信息]\033[0m 证书CN: ${SERVER_IP}"
+    echo -e "\033[32m[信息]\033[0m 证书组织: 小白"
+    
+    cd ${conf_file}
+    
+    # 尝试certtool
+    if command -v certtool &>/dev/null; then
+        echo -e "\033[32m[信息]\033[0m 使用certtool生成证书..."
+        tmpfile=$(mktemp)
+        cat > ${tmpfile} << EOFTEMPLATE
+cn = "${SERVER_IP}"
+organization = "小白"
+serial = 1
+expiration_days = 3650
+ca
+signing_key
+cert_signing_key
+encryption_key
+tls_www_server
+EOFTEMPLATE
+        certtool --generate-privkey --outfile server-key.pem 2>/dev/null
+        certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>/dev/null
+        rm -f ${tmpfile}
+        chmod 600 server-key.pem 2>/dev/null
+    fi
+    
+    # 如果certtool失败，用openssl
+    if [[ ! -s server-cert.pem ]]; then
+        echo -e "\033[32m[信息]\033[0m 使用openssl生成证书..."
+        openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=小白" 2>/dev/null
+    fi
+    
+    # 如果都失败，使用系统证书
+    if [[ ! -s server-cert.pem ]]; then
+        echo -e "\033[33m[警告]\033[0m 无法生成自签名证书，尝试使用系统证书..."
+    else
+        echo -e "\033[32m[信息]\033[0m 证书生成完成"
+    fi
+    
+    # 确保权限正确
+    chmod 600 ${conf_file}/server-key.pem 2>/dev/null
+    chmod 644 ${conf_file}/server-cert.pem 2>/dev/null
+    
+    echo -e "\033[32m[信息]\033[0m 配置完成"
 }
 
 # 防火墙
 config_firewall(){
-    echo "${Info} 配置防火墙..."
+    echo -e "\033[32m[信息]\033[0m 配置防火墙..."
     echo 1 > /proc/sys/net/ipv4/ip_forward
     
     if command -v firewall-cmd &>/dev/null; then
@@ -110,36 +164,37 @@ config_firewall(){
         iptables -I FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
         iptables -I FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null
     fi
-    echo "${Info} 防火墙配置完成"
+    echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
 }
 
 # 启动
 start_ocserv(){
     if [[ -f /var/run/ocserv.pid ]]; then
-        echo "${Warn} ocserv 已在运行"
+        echo -e "\033[33m[警告]\033[0m ocserv 已在运行"
         return
     fi
     
+    echo -e "\033[32m[信息]\033[0m 启动 ocserv..."
     ocserv -f -c ${conf} &
     sleep 2
     
     if [[ -f /var/run/ocserv.pid ]]; then
-        echo "${Info} ocserv 启动成功"
+        echo -e "\033[32m[信息]\033[0m ocserv 启动成功 (PID: $(cat /var/run/ocserv.pid))"
     else
-        echo "${Error} ocserv 启动失败"
+        echo -e "\033[31m[错误]\033[0m ocserv 启动失败"
     fi
 }
 
 # 停止
 stop_ocserv(){
     if [[ ! -f /var/run/ocserv.pid ]]; then
-        echo "${Info} ocserv 未运行"
+        echo -e "\033[32m[信息]\033[0m ocserv 未运行"
         return
     fi
     
     kill $(cat /var/run/ocserv.pid) 2>/dev/null
     rm -f /var/run/ocserv.pid
-    echo "${Info} ocserv 已停止"
+    echo -e "\033[32m[信息]\033[0m ocserv 已停止"
 }
 
 # 重启
@@ -152,9 +207,9 @@ restart_ocserv(){
 # 状态
 status_ocserv(){
     if [[ -f /var/run/ocserv.pid ]]; then
-        echo "${Info} ocserv 运行中 (PID: $(cat /var/run/ocserv.pid))"
+        echo -e "\033[32m[信息]\033[0m ocserv 运行中 (PID: $(cat /var/run/ocserv.pid))"
     else
-        echo "${Info} ocserv 未运行"
+        echo -e "\033[33m[警告]\033[0m ocserv 未运行"
     fi
 }
 
@@ -163,14 +218,14 @@ add_user(){
     read -p "用户名: " u
     read -p "密码: " p
     echo -e "${p}\n${p}" | ocpasswd -c ${passwd_file} $u 2>/dev/null
-    echo "${Info} 用户 $u 添加成功"
+    echo -e "\033[32m[信息]\033[0m 用户 $u 添加成功"
 }
 
 # 删除用户
 del_user(){
     read -p "用户名: " u
     ocpasswd -c ${passwd_file} -d $u 2>/dev/null
-    echo "${Info} 用户 $u 已删除"
+    echo -e "\033[32m[信息]\033[0m 用户 $u 已删除"
 }
 
 # 修改端口
@@ -179,7 +234,7 @@ set_port(){
     port=${port:-443}
     sed -i "s/^tcp-port = .*/tcp-port = ${port}/" ${conf}
     sed -i "s/^udp-port = .*/udp-port = ${port}/" ${conf}
-    echo "${Info} 端口已修改为: ${port}"
+    echo -e "\033[32m[信息]\033[0m 端口已修改为: ${port}"
 }
 
 # 查看在线用户
@@ -189,27 +244,94 @@ view_users(){
     echo "========================================"
     
     if [[ ! -f /var/run/ocserv.pid ]]; then
-        echo "${Info} ocserv 未运行"
+        echo -e "\033[33m[警告]\033[0m ocserv 未运行"
         return
     fi
     
     # 使用ss检查连接
-    connections=$(ss -tn | grep ":443 " | grep ESTABLISHED | wc -l)
+    connections=$(ss -tn 2>/dev/null | grep ":443 " | grep ESTABLISHED | wc -l)
     if [[ $connections -gt 0 ]]; then
-        echo "当前在线用户数: $connections"
-        ss -tn | grep ":443 " | grep ESTABLISHED
+        echo -e "\033[32m[信息]\033[0m 当前在线用户数: $connections"
+        ss -tn 2>/dev/null | grep ":443 " | grep ESTABLISHED
     else
-        echo "当前无用户在线"
+        echo -e "\033[33m[警告]\033[0m 当前无用户在线"
     fi
+}
+
+# 流量统计
+view_traffic(){
+    echo "========================================"
+    echo "  流量统计"
+    echo "========================================"
+    
+    if [[ ! -f /var/run/ocserv.pid ]]; then
+        echo -e "\033[33m[警告]\033[0m ocserv 未运行"
+        return
+    fi
+    
+    # 尝试从/proc获取流量
+    if [[ -d /proc/net/nf_conntrack ]]; then
+        traffic=$(cat /proc/net/nf_conntrack 2>/dev/null | grep ocserv | wc -l)
+        echo -e "\033[32m[信息]\033[0m 当前连接数: $traffic"
+    fi
+    
+    # 显示网络接口统计
+    echo -e "\033[32m[信息]\033[0m 网络接口统计:"
+    ip -s link show 2>/dev/null | grep -A1 "tun\|vpns" || echo "未找到VPN接口"
 }
 
 # 重新生成证书
 regen_cert(){
-    echo "${Info} 重新生成证书..."
+    echo -e "\033[32m[信息]\033[0m 重新生成证书..."
     cd ${conf_file}
     rm -f server-cert.pem server-key.pem
-    openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=VPN/O=小白" 2>/dev/null
-    echo "${Info} 证书已重新生成，请重启VPN"
+    
+    # 获取IP
+    SERVER_IP=$(curl -s --max-time 5 ip.io 2>/dev/null)
+    [[ -z ${SERVER_IP} ]] && SERVER_IP=$(curl -s --max-time 5 api.ip.sb 2>/dev/null)
+    [[ -z ${SERVER_IP} ]] && read -p "请输入IP: " SERVER_IP
+    [[ -z ${SERVER_IP} ]] && SERVER_IP="VPN"
+    
+    # 生成
+    if command -v certtool &>/dev/null; then
+        tmpfile=$(mktemp)
+        cat > ${tmpfile} << EOFTEMPLATE
+cn = "${SERVER_IP}"
+organization = "小白"
+serial = 1
+expiration_days = 3650
+ca
+signing_key
+cert_signing_key
+encryption_key
+tls_www_server
+EOFTEMPLATE
+        certtool --generate-privkey --outfile server-key.pem 2>/dev/null
+        certtool --generate-self-signed --load-privkey server-key.pem --outfile server-cert.pem --template=${tmpfile} 2>/dev/null
+        rm -f ${tmpfile}
+    fi
+    
+    if [[ ! -s server-cert.pem ]]; then
+        openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=小白" 2>/dev/null
+    fi
+    
+    chmod 600 server-key.pem 2>/dev/null
+    echo -e "\033[32m[信息]\033[0m 证书已重新生成，请重启VPN"
+}
+
+# 查看日志
+view_log(){
+    echo "========================================"
+    echo "  查看日志"
+    echo "========================================"
+    
+    if [[ -f ${log_file} ]]; then
+        tail -50 ${log_file}
+    elif command -v journalctl &>/dev/null; then
+        journalctl -u ocserv -n 50 --no-pager 2>/dev/null || echo "无法获取日志"
+    else
+        echo -e "\033[33m[警告]\033[0m 未找到日志文件"
+    fi
 }
 
 # 卸载
@@ -220,7 +342,25 @@ uninstall_ocserv(){
     stop_ocserv
     rm -rf ${conf_file}
     rm -f /var/run/ocserv.pid
-    echo "${Info} ocserv 已卸载"
+    rm -f /var/run/ocserv.socket
+    
+    # 清理防火墙
+    if command -v firewall-cmd &>/dev/null; then
+        firewall-cmd --permanent --remove-port=443/tcp 2>/dev/null
+        firewall-cmd --permanent --remove-port=443/udp 2>/dev/null
+        firewall-cmd --reload 2>/dev/null
+    fi
+    
+    # 卸载包
+    if command -v dnf &>/dev/null; then
+        dnf remove -y ocserv 2>/dev/null
+    elif command -v yum &>/dev/null; then
+        yum remove -y ocserv 2>/dev/null
+    elif command -v apt &>/dev/null; then
+        apt remove -y ocserv 2>/dev/null
+    fi
+    
+    echo -e "\033[32m[信息]\033[0m ocserv 已卸载"
 }
 
 # 菜单
@@ -230,7 +370,7 @@ menu(){
     echo "  ocserv VPN 管理脚本"
     echo "  版本: 1.3.6"
     echo "========================================"
-    echo "1.  安装 VPN"
+    echo "1.  安装 VPN (推荐)"
     echo "2.  配置 VPN"
     echo "3.  启动 VPN"
     echo "4.  停止 VPN"
@@ -240,11 +380,13 @@ menu(){
     echo "8.  删除用户"
     echo "9.  修改端口"
     echo "10. 查看在线用户"
-    echo "11. 重新生成证书"
-    echo "12. 卸载 VPN"
+    echo "11. 流量统计"
+    echo "12. 重新生成证书"
+    echo "13. 查看日志"
+    echo "14. 卸载 VPN"
     echo "0.  退出"
     echo "========================================"
-    read -p "请输入选项 [0-12]: " choice
+    read -p "请输入选项 [0-14]: " choice
     
     case $choice in
         1)
@@ -263,8 +405,10 @@ menu(){
         8) del_user ;;
         9) set_port ;;
         10) view_users ;;
-        11) regen_cert ;;
-        12) uninstall_ocserv ;;
+        11) view_traffic ;;
+        12) regen_cert ;;
+        13) view_log ;;
+        14) uninstall_ocserv ;;
         0) exit 0 ;;
     esac
     
