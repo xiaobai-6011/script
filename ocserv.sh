@@ -34,6 +34,13 @@ detect_ocserv(){
 		ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "sbin/ocserv$" | head -1)
 	fi
 	ocserv_path=${ocserv_path:-/usr/sbin/ocserv}
+	# 确保默认路径存在
+	if [[ ! -x ${ocserv_path} ]]; then
+		# 从rpm包查找
+		if command -v rpm &>/dev/null; then
+			ocserv_path=$(rpm -ql ocserv 2>/dev/null | grep -E "sbin/ocserv$" | head -1)
+		fi
+	fi
 }
 
 # 检测配置文件路径
