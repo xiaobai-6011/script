@@ -42,7 +42,7 @@ detect_sys(){
 install_deps(){
     echo -e "\033[32m[信息]\033[0m 开始安装依赖..."
     
-    if [[ "${release}" == "centos-stream" ]]; then
+    if [[ "${release}" == "centos-stream" ]] || [[ "${release}" == "almalinux10" ]]; then
         echo -e "\033[32m[信息]\033[0m 使用 Copr 源安装..."
         dnf install -y dnf-plugins-core 2>/dev/null
         dnf copr enable -y @ocserv/ocserv 2>/dev/null
