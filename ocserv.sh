@@ -185,12 +185,12 @@ config_firewall(){
         
         # 添加NAT table
         nft add table ip nat 2>/dev/null
-        nft add chain ip nat postrouting { type nat hook postrouting priority srcnat; } 2>/dev/null
+        nft add chain ip nat postrouting type nat hook postrouting priority srcnat 2>/dev/null
         nft add rule ip nat postrouting ip saddr 172.16.0.0/22 counter masquerade 2>/dev/null
         
         # 添加filter table
         nft add table ip filter 2>/dev/null
-        nft add chain ip filter forward { type filter hook forward priority filter; } 2>/dev/null
+        nft add chain ip filter forward type filter hook forward priority filter 2>/dev/null
         nft add rule ip filter forward iifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward ct state established,related accept 2>/dev/null
@@ -392,12 +392,12 @@ fix_network(){
         
         # 添加NAT规则 (关键！)
         nft add table ip nat 2>/dev/null
-        nft add chain ip nat postrouting { type nat hook postrouting priority srcnat; } 2>/dev/null
+        nft add chain ip nat postrouting type nat hook postrouting priority srcnat 2>/dev/null
         nft add rule ip nat postrouting ip saddr 172.16.0.0/22 counter masquerade 2>/dev/null
         
         # 添加转发规则
         nft add table ip filter 2>/dev/null
-        nft add chain ip filter forward { type filter hook forward priority filter; } 2>/dev/null
+        nft add chain ip filter forward type filter hook forward priority filter 2>/dev/null
         nft add rule ip filter forward iifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward ct state established,related accept 2>/dev/null
@@ -530,19 +530,38 @@ view_log(){
 
 # 卸载
 uninstall_ocserv(){
-    read -p "确定要卸载吗? (y/n): " c
+    echo "========================================"
+    echo "  卸载 ocserv VPN"
+    echo "========================================"
+    read -p "确定要完全卸载吗? (y/n): " c
     [[ $c != "y" ]] && return
     
-    stop_ocserv
+    echo -e "\033[32m[信息]\033[0m 开始卸载..."
+    
+    # 停止服务
+    stop_ocserv 2>/dev/null
+    pkill -9 ocserv 2>/dev/null
+    
+    # 删除配置
     rm -rf ${conf_file}
     rm -f /var/run/ocserv.pid
     rm -f /var/run/ocserv.socket
+    rm -f ${log_file}
     
     # 清理防火墙
     if command -v firewall-cmd &>/dev/null; then
         firewall-cmd --permanent --remove-port=443/tcp 2>/dev/null
         firewall-cmd --permanent --remove-port=443/udp 2>/dev/null
+        firewall-cmd --permanent --remove-masquerade 2>/dev/null
+        firewall-cmd --permanent --remove-source=172.16.0.0/22 2>/dev/null
         firewall-cmd --reload 2>/dev/null
+    fi
+    
+    # 清理 nftables
+    if command -v nft &>/dev/null; then
+        nft delete table ip nat 2>/dev/null
+        nft delete table ip filter 2>/dev/null
+        rm -f /etc/nftables.conf
     fi
     
     # 卸载包
@@ -554,7 +573,8 @@ uninstall_ocserv(){
         apt remove -y ocserv 2>/dev/null
     fi
     
-    echo -e "\033[32m[信息]\033[0m ocserv 已卸载"
+    echo -e "\033[32m[信息]\033[0m ocserv 已完全卸载"
+    echo -e "\033[33m[提示]\033[0m 请手动删除此脚本: rm -f $0"
 }
 
 # 菜单
