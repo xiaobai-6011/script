@@ -6,6 +6,7 @@ echo "DEBUG4"
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
 echo "After PATH"
 export PATH
+echo "After export PATH"
 
 #=================================================
 #	Description: ocserv AnyConnect VPN
@@ -15,6 +16,7 @@ export PATH
 #=================================================
 
 sh_ver="1.3.5"
+echo "After sh_ver"
 
 # 全面的ocserv路径检测
 detect_ocserv(){
