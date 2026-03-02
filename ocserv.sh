@@ -608,7 +608,13 @@ uninstall_ocserv(){
     
     # 停止服务
     stop_ocserv 2>/dev/null
-    pkill -9 ocserv 2>/dev/null
+    # 强制停止ocserv进程
+    if [[ -f /var/run/ocserv.pid ]]; then
+        kill -9 $(cat /var/run/ocserv.pid) 2>/dev/null
+        rm -f /var/run/ocserv.pid
+    fi
+    # 也尝试用pkill
+    pkill -9 ocserv 2>/dev/null || true
     
     # 删除配置
     rm -rf ${conf_file}
