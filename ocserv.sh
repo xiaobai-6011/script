@@ -570,18 +570,6 @@ fix_network(){
     echo -e "\033[32m[信息]\033[0m 网络修复完成，请重新连接VPN"
 }
 
-# SSH bypass - 允许VPN用户访问SSH
-                firewall-cmd --reload 2>/dev/null
-            elif command -v iptables >/dev/null 2>&1; then
-                iptables -D INPUT -p tcp --dport 22 -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
-                iptables-save > /etc/sysconfig/iptables 2>/dev/null
-            fi
-            echo -e "\033[32m[信息]\033[0m SSH bypass 已关闭"
-            # 重启VPN使规则生效
-            restart_ocserv
-            ;;
-    esac
-}
 
 # 重新生成证书
 regen_cert(){
