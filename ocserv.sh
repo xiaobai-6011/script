@@ -229,8 +229,8 @@ config_firewall(){
         # 添加filter table
         nft add table ip filter 2>/dev/null
         nft add chain ip filter forward \{type filter hook forward priority filter\} 2>/dev/null
-        nft add rule ip filter forward iifname vpns+ accept 2>/dev/null
-        nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
+        nft add rule ip filter forward iifname vpns0 accept 2>/dev/null
+        nft add rule ip filter forward oifname vpns0 accept 2>/dev/null
         nft add rule ip filter forward ct state established,related accept 2>/dev/null
         
         # 允许443端口
@@ -253,8 +253,8 @@ config_firewall(){
         iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE
         
         # 转发
-        iptables -A FORWARD -i vpns+ -j ACCEPT
-        iptables -A FORWARD -o vpns+ -j ACCEPT
+        iptables -A FORWARD -i vpns0 -j ACCEPT
+        iptables -A FORWARD -o vpns0 -j ACCEPT
         iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
         
         # 允许VPN网段
@@ -268,7 +268,7 @@ config_firewall(){
         echo -e "\033[33m[警告]\033[0m 未找到防火墙工具，尝试使用nftables..."
         # 尝试直接运行nft命令
         nft -f /dev/stdin <<< "add table ip nat; add chain ip nat postrouting type nat hook postrouting priority srcnat; add rule ip nat postrouting ip saddr 172.16.0.0/22 masquerade" 2>/dev/null
-        nft -f /dev/stdin <<< "add table ip filter; add chain ip filter forward type filter hook forward priority filter; add rule ip filter forward iifname vpns+ accept; add rule ip filter forward oifname vpns+ accept" 2>/dev/null
+        nft -f /dev/stdin <<< "add table ip filter; add chain ip filter forward type filter hook forward priority filter; add rule ip filter forward iifname vpns0 accept; add rule ip filter forward oifname vpns0 accept" 2>/dev/null
         echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
     fi
     echo -e "\033[32m[信息]\033[0m 防火墙配置完成"
@@ -451,8 +451,8 @@ fix_network(){
         # 添加转发规则
         nft add table ip filter 2>/dev/null
         nft add chain ip filter forward \{type filter hook forward priority filter\} 2>/dev/null
-        nft add rule ip filter forward iifname vpns+ accept 2>/dev/null
-        nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
+        nft add rule ip filter forward iifname vpns0 accept 2>/dev/null
+        nft add rule ip filter forward oifname vpns0 accept 2>/dev/null
         nft add rule ip filter forward ct state established,related accept 2>/dev/null
         
         # 允许443端口
@@ -473,8 +473,8 @@ fix_network(){
         
         # 添加新规则 (关键！)
         iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE
-        iptables -A FORWARD -i vpns+ -j ACCEPT
-        iptables -A FORWARD -o vpns+ -j ACCEPT
+        iptables -A FORWARD -i vpns0 -j ACCEPT
+        iptables -A FORWARD -o vpns0 -j ACCEPT
         iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
         
         # 持久化
@@ -636,8 +636,8 @@ uninstall_ocserv(){
         # 删除NAT规则
         iptables -t nat -D POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
         # 删除转发规则
-        iptables -D FORWARD -i vpns+ -j ACCEPT 2>/dev/null
-        iptables -D FORWARD -o vpns+ -j ACCEPT 2>/dev/null
+        iptables -D FORWARD -i vpns0 -j ACCEPT 2>/dev/null
+        iptables -D FORWARD -o vpns0 -j ACCEPT 2>/dev/null
         iptables -D FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
         iptables -D FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null
         # 删除端口规则
