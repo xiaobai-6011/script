@@ -185,12 +185,12 @@ config_firewall(){
         
         # 添加NAT table
         nft add table ip nat 2>/dev/null
-        nft add chain ip nat postrouting type nat hook postrouting priority srcnat 2>/dev/null
+        nft add chain ip nat postrouting \{type nat hook postrouting priority srcnat\} 2>/dev/null
         nft add rule ip nat postrouting ip saddr 172.16.0.0/22 counter masquerade 2>/dev/null
         
         # 添加filter table
         nft add table ip filter 2>/dev/null
-        nft add chain ip filter forward type filter hook forward priority filter 2>/dev/null
+        nft add chain ip filter forward \{type filter hook forward priority filter\} 2>/dev/null
         nft add rule ip filter forward iifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward ct state established,related accept 2>/dev/null
@@ -392,12 +392,12 @@ fix_network(){
         
         # 添加NAT规则 (关键！)
         nft add table ip nat 2>/dev/null
-        nft add chain ip nat postrouting type nat hook postrouting priority srcnat 2>/dev/null
+        nft add chain ip nat postrouting \{type nat hook postrouting priority srcnat\} 2>/dev/null
         nft add rule ip nat postrouting ip saddr 172.16.0.0/22 counter masquerade 2>/dev/null
         
         # 添加转发规则
         nft add table ip filter 2>/dev/null
-        nft add chain ip filter forward type filter hook forward priority filter 2>/dev/null
+        nft add chain ip filter forward \{type filter hook forward priority filter\} 2>/dev/null
         nft add rule ip filter forward iifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward oifname vpns+ accept 2>/dev/null
         nft add rule ip filter forward ct state established,related accept 2>/dev/null
