@@ -345,6 +345,11 @@ config_firewall(){
 config_nftables(){
     echo -e "\033[32m[信息]\033[0m 配置 nftables..."
     
+    # 检测VPN接口名
+    VPN_IFACE=$(ip link show | grep -oP 'vpns[0-9]+' | head -1)
+    VPN_IFACE=${VPN_IFACE:-vpns0}
+    echo -e "\033[32m[信息]\033[0m VPN接口: $VPN_IFACE"
+    
     # NAT表
     nft add table ip nat 2>/dev/null
     nft add chain ip nat postrouting '{ type nat hook postrouting priority srcnat; }' 2>/dev/null
@@ -357,10 +362,10 @@ config_nftables(){
     nft add rule ip filter input udp dport 443 accept 2>/dev/null
     nft add rule ip filter input ct state established,related accept 2>/dev/null
     
-    # Filter表 - FORWARD
+    # Filter表 - FORWARD ()
     nft add chain ip filter forward '{ type filter hook forward priority filter; }' 2>/dev/null
-    nft add rule ip filter forward iifname vpns0 accept 2>/dev/null
-    nft add rule ip filter forward oifname vpns0 accept 2>/dev/null
+    nft add rule ip filter forward iifname $VPN_IFACE accept 2>/dev/null
+    nft add rule ip filter forward oifname $VPN_IFACE accept 2>/dev/null
     nft add rule ip filter forward ct state established,related accept 2>/dev/null
     
     # 持久化
