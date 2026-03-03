@@ -158,16 +158,16 @@ install_ocserv_yum(){
     if [[ -f /etc/redhat-release ]]; then
         ver=$(cat /etc/redhat-release | grep -oP '\d+' | head -1)
         if [[ "$ver" == "7" || "$ver" == "8" ]]; then
-            echo -e "\033[32m[信息]\033[0m 检测到 CentOS $ver，配置Vault源..."
+            echo -e "\033[32m[信息]\033[0m 检测到 CentOS $ver，配置阿里云源..."
             cat > /etc/yum.repos.d/CentOS-Vault.repo << 'EOF'
 [base]
 name=CentOS-$ver - Base
-baseurl=http://vault.centos.org/$ver.9/BaseOS/x86_64/os/
+baseurl=http://mirrors.aliyun.com/centos/$ver.9/BaseOS/x86_64/os/
 gpgcheck=0
 enabled=1
 [appstream]
 name=CentOS-$ver - AppStream
-baseurl=http://vault.centos.org/$ver.9/AppStream/x86_64/os/
+baseurl=http://mirrors.aliyun.com/centos/$ver.9/AppStream/x86_64/os/
 gpgcheck=0
 enabled=1
 EOF
@@ -195,16 +195,16 @@ install_ocserv_yum(){
     yum install -y epel-release 2>/dev/null
         # CentOS 7/8 用Vault源
         if [[ "$ver" == "7" ]] || [[ "$ver" == "8" ]]; then
-            echo -e "\033[32m[信息]\033[0m 配置Vault源..."
+            echo -e "\033[32m[信息]\033[0m 配置阿里云源..."
             cat > /etc/yum.repos.d/CentOS-Vault.repo << 'EOF'
 [base]
 name=CentOS-$ver - Base
-baseurl=http://vault.centos.org/$ver.9/BaseOS/x86_64/os/
+baseurl=http://mirrors.aliyun.com/centos/$ver.9/BaseOS/x86_64/os/
 gpgcheck=0
 enabled=1
 [appstream]
 name=CentOS-$ver - AppStream
-baseurl=http://vault.centos.org/$ver.9/AppStream/x86_64/os/
+baseurl=http://mirrors.aliyun.com/centos/$ver.9/AppStream/x86_64/os/
 gpgcheck=0
 enabled=1
 EOF
@@ -220,16 +220,16 @@ EOF
     yum install -y epel-release 2>/dev/null
         # CentOS 7/8 用Vault源
         if [[ "$ver" == "7" ]] || [[ "$ver" == "8" ]]; then
-            echo -e "\033[32m[信息]\033[0m 配置Vault源..."
+            echo -e "\033[32m[信息]\033[0m 配置阿里云源..."
             cat > /etc/yum.repos.d/CentOS-Vault.repo << 'EOF'
 [base]
 name=CentOS-$ver - Base
-baseurl=http://vault.centos.org/$ver.9/BaseOS/x86_64/os/
+baseurl=http://mirrors.aliyun.com/centos/$ver.9/BaseOS/x86_64/os/
 gpgcheck=0
 enabled=1
 [appstream]
 name=CentOS-$ver - AppStream
-baseurl=http://vault.centos.org/$ver.9/AppStream/x86_64/os/
+baseurl=http://mirrors.aliyun.com/centos/$ver.9/AppStream/x86_64/os/
 gpgcheck=0
 enabled=1
 EOF
