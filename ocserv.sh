@@ -43,26 +43,35 @@ install_deps(){
     echo -e "\033[32m[信息]\033[0m 开始安装依赖..."
     
     if [[ "${release}" == "centos-stream" ]] || [[ "${release}" == "almalinux10" ]]; then
-        echo -e "\033[32m[信息]\033[0m 使用 Copr 源安装..."
+        echo -e "\033[32m[信息]\033[0m 尝试安装 ocserv..."
+        
+        # Copr源
         dnf install -y dnf-plugins-core 2>/dev/null
         dnf copr enable -y @ocserv/ocserv 2>/dev/null
         dnf install -y ocserv 2>/dev/null
         
-        # 安装防火墙工具
-        echo -e "\033[32m[信息]\033[0m 检查防火墙工具..."
-        if ! command -v iptables &>/dev/null && ! command -v firewall-cmd &>/dev/null; then
-            echo -e "\033[33m[警告]\033[0m 未找到防火墙工具，正在安装..."
-            dnf install -y iptables-services 2>/dev/null
-            systemctl enable iptables 2>/dev/null
-            systemctl start iptables 2>/dev/null
+        # EPEL备用
+        if ! command -v ocserv >/dev/null 2>&1; then
+            echo -e "\033[33m[警告]\033[0m Copr无包，尝试EPEL..."
+            dnf install -y epel-release 2>/dev/null
+            dnf install -y ocserv 2>/dev/null
         fi
+        
+        # 检查结果
+        if command -v ocserv >/dev/null 2>&1; then
+            echo -e "\033[32m[√]\033[0m ocserv 安装成功"
+        else
+            echo -e "\033[31m[错误]\033[0m ocserv 安装失败"
+        fi
+        
+        # 安装防火墙
+        dnf install -y nftables iptables-services 2>/dev/null
+        systemctl enable nftables 2>/dev/null
         
     elif [[ "${release}" == "centos" ]]; then
         yum install -y epel-release 2>/dev/null
         yum install -y ocserv 2>/dev/null || dnf install -y ocserv 2>/dev/null
-        
-        # 安装防火墙工具
-        if ! command -v iptables &>/dev/null; then
+        if ! command -v iptables >/dev/null; then
             yum install -y iptables-services 2>/dev/null
         fi
     else
@@ -274,23 +283,42 @@ config_firewall(){
         nft add chain ip filter forward type filter hook forward priority filter 2>/dev/null
         nft add rule ip filter forward iifname vpns0 accept 2>/dev/null
         nft add rule ip filter forward oifname vpns0 accept 2>/dev/null
+    elif command -v nft >/dev/null 2>&1; then
+        echo -e "\033[32m[信息]\033[0m 配置 nftables..."
+        nft add table ip nat 2>/dev/null
+        nft add chain ip nat postrouting type nat hook postrouting priority srcnat 2>/dev/null
+        nft add rule ip nat postrouting ip saddr 172.16.0.0/22 masquerade 2>/dev/null
+        nft add table ip filter 2>/dev/null
+        nft add chain ip filter forward type filter hook forward priority filter 2>/dev/null
+        nft add rule ip filter forward iifname vpns0 accept 2>/dev/null
+        nft add rule ip filter forward oifname vpns0 accept 2>/dev/null
     elif command -v iptables >/dev/null 2>&1; then
-        echo -e "\033[32m[信息]\033[0m 配置 iptables..."
-        
-        # 开放端口
-        iptables -I INPUT -p tcp --dport 443 -j ACCEPT
-        iptables -I INPUT -p udp --dport 443 -j ACCEPT
-        
-        # NAT - masquerade (关键！)
-        iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE
-        
-        # 转发
-        iptables -A FORWARD -i vpns0 -j ACCEPT
-        iptables -A FORWARD -o vpns0 -j ACCEPT
-        iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-        
-        # 允许VPN网段
-        iptables -A INPUT -s 172.16.0.0/22 -j ACCEPT
+        # 跳过iptables如果它使用nf_tables后端
+        if iptables -L -n 2>&1 | grep -q "nf_tables"; then
+            echo -e "\033[33m[警告]\033[0m iptables使用nf_tables后端，跳过"
+        else
+            echo -e "\033[32m[信息]\033[0m 配置 iptables..."
+            
+            # 开放端口
+            iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+            iptables -I INPUT -p udp --dport 443 -j ACCEPT
+            
+            # NAT - masquerade (关键！)
+            iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE
+            
+            # 转发
+            iptables -A FORWARD -i vpns0 -j ACCEPT
+            iptables -A FORWARD -o vpns0 -j ACCEPT
+            iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+            
+            # 允许VPN网段
+            iptables -A INPUT -s 172.16.0.0/22 -j ACCEPT
+            
+            # 持久化
+            iptables-save > /etc/sysconfig/iptables 2>/dev/null
+            
+            echo -e "\033[32m[信息]\033[0m iptables 配置完成"
+        fi
         
         # 持久化
         iptables-save > /etc/sysconfig/iptables 2>/dev/null
