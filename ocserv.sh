@@ -17,6 +17,12 @@ log_file="/var/log/ocserv.log"
 # 全局防火墙变量
 FIREWALL=""
 
+# 生成随机字符串
+gen_random(){
+    length=$1
+    tr -dc 'a-zA-Z' </dev/urandom | head -c $length
+}
+
 # 检测系统
 detect_sys(){
     echo "========================================"
@@ -439,12 +445,14 @@ mtu = 1400
 max-clients = 0
 EOF
     
-    # 生成证书
+    # 生成证书 (使用随机CN和组织)
     cd ${conf_file}
     if [[ ! -f server-cert.pem ]]; then
-        SERVER_IP=$(curl -s https://api.ip.sb 2>/dev/null || curl -s https://ipinfo.io/ip 2>/dev/null)
-        openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=xiaobai" 2>/dev/null
+        RANDOM_CN=$(gen_random 8)
+        RANDOM_ORG=$(gen_random 5)
+        openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 365 -out server-cert.pem -subj "/CN=${RANDOM_CN}/O=${RANDOM_ORG}" 2>/dev/null
         chmod 600 server-key.pem
+        echo -e "\033[32m[√]\033[0m 证书已生成: CN=${RANDOM_CN}, O=${RANDOM_ORG}"
     fi
     
     echo -e "\033[32m[√]\033[0m 配置完成"
@@ -660,47 +668,41 @@ view_traffic(){
 }
 
 # 重新生成证书
+# 生成随机字符串
 regen_cert(){
     echo "========================================"
     echo "  重新生成证书"
     echo "========================================"
     
-    # 获取当前IP
-    SERVER_IP=$(curl -s https://api.ip.sb 2>/dev/null || curl -s https://ipinfo.io/ip 2>/dev/null)
+    # 生成随机CN和组织
+    RANDOM_CN=$(gen_random 8)
+    RANDOM_ORG=$(gen_random 5)
     
-    echo "当前服务器IP: $SERVER_IP"
-    echo "默认组织: xiaobai"
+    echo "随机CN: $RANDOM_CN"
+    echo "随机组织: $RANDOM_ORG"
     echo ""
-    echo "1. 使用默认设置生成"
-    echo "2. 自定义CN (证书名称)"
-    echo "3. 自定义组织名称"
+    echo "1. 使用随机名称生成"
+    echo "2. 自定义CN (填完后再填组织)"
     echo "0. 返回"
     read -p "请选择: " c
     
     case $c in
         1)
-            # 默认生成
+            # 随机生成
             cd ${conf_file}
             rm -f server-cert.pem server-key.pem
-            openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=xiaobai" 2>/dev/null
+            openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 365 -out server-cert.pem -subj "/CN=${RANDOM_CN}/O=${RANDOM_ORG}" 2>/dev/null
             chmod 600 server-key.pem
             ;;
         2)
             # 自定义CN
-            read -p "输入CN (证书名称/IP): " custom_cn
-            custom_cn=${custom_cn:-$SERVER_IP}
-            cd ${conf_file}
-            rm -f server-cert.pem server-key.pem
-            openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${custom_cn}/O=xiaobai" 2>/dev/null
-            chmod 600 server-key.pem
-            ;;
-        3)
-            # 自定义组织
+            read -p "输入CN (证书名称): " custom_cn
             read -p "输入组织名称: " custom_org
-            custom_org=${custom_org:-xiaobai}
+            custom_cn=${custom_cn:-$RANDOM_CN}
+            custom_org=${custom_org:-$RANDOM_ORG}
             cd ${conf_file}
             rm -f server-cert.pem server-key.pem
-            openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=${custom_org}" 2>/dev/null
+            openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 365 -out server-cert.pem -subj "/CN=${custom_cn}/O=${custom_org}" 2>/dev/null
             chmod 600 server-key.pem
             ;;
         0)
