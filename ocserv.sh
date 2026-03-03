@@ -503,20 +503,178 @@ menu(){
     echo "1. 安装 VPN"
     echo "2. 启动 VPN"
     echo "3. 停止 VPN"
-    echo "4. 添加用户"
-    echo "5. 卸载 VPN"
+    echo "4. 重启 VPN"
+    echo "5. 查看状态"
+    echo "6. 添加用户"
+    echo "7. 删除用户"
+    echo "8. 修改端口"
+    echo "9. 查看在线用户"
+    echo "10. 查看流量统计"
+    echo "11. 重新生成证书"
+    echo "12. 查看日志"
+    echo "13. 修复网络"
+    echo "14. 卸载 VPN"
     echo "0. 退出"
-    read -p "选择: " c
+    read -p "请输入选项 [0-14]: " c
+    
     case $c in
         1) detect_sys; install_deps; config_ocserv; config_firewall; start_ocserv ;;
         2) start_ocserv ;;
         3) stop_ocserv ;;
-        4) add_user ;;
-        5) uninstall_ocserv ;;
+        4) stop_ocserv; sleep 1; start_ocserv ;;
+        5) view_status ;;
+        6) add_user ;;
+        7) del_user ;;
+        8) set_port ;;
+        9) view_users ;;
+        10) view_traffic ;;
+        11) regen_cert ;;
+        12) view_log ;;
+        13) fix_network ;;
+        14) uninstall_ocserv ;;
         0) exit 0 ;;
     esac
     read -p "完成"
     menu
+}
+
+# 查看状态
+view_status(){
+    echo "========================================"
+    echo "  VPN 状态"
+    echo "========================================"
+    if [[ -f /var/run/ocserv.pid ]]; then
+        echo -e "\033[32m[√]\033[0m VPN 服务: 运行中 (PID: $(cat /var/run/ocserv.pid))"
+    else
+        echo -e "\033[31m[×]\033[0m VPN 服务: 未运行"
+    fi
+    
+    # 检查防火墙
+    if command -v nft >/dev/null 2>&1; then
+        if nft list table ip nat 2>/dev/null | grep -q "masquerade"; then
+            echo -e "\033[32m[√]\033[0m NAT: 已配置"
+        else
+            echo -e "\033[31m[×]\033[0m NAT: 未配置"
+        fi
+    elif command -v iptables >/dev/null 2>&1; then
+        if iptables -t nat -L -n 2>/dev/null | grep -q "MASQUERADE"; then
+            echo -e "\033[32m[√]\033[0m NAT: 已配置"
+        else
+            echo -e "\033[31m[×]\033[0m NAT: 未配置"
+        fi
+    fi
+    
+    # 检查IP转发
+    if [[ $(cat /proc/sys/net/ipv4/ip_forward) == "1" ]]; then
+        echo -e "\033[32m[√]\033[0m IP转发: 已开启"
+    else
+        echo -e "\033[31m[×]\033[0m IP转发: 未开启"
+    fi
+}
+
+# 删除用户
+del_user(){
+    echo "========================================"
+    echo "  删除用户"
+    echo "========================================"
+    ls -la ${conf_file}/ocpasswd 2>/dev/null
+    read -p "输入要删除的用户名: " u
+    if [[ -f ${passwd_file} ]]; then
+        ocpasswd -d $u -c ${passwd_file} 2>/dev/null
+        echo -e "\033[32m[√]\033[0m 用户 $u 已删除"
+    else
+        echo -e "\033[31m[错误]\033[0m 用户文件不存在"
+    fi
+}
+
+# 修改端口
+set_port(){
+    echo "========================================"
+    echo "  修改端口"
+    echo "========================================"
+    read -p "输入新端口(默认443): " port
+    port=${port:-443}
+    
+    sed -i "s/tcp-port = .*/tcp-port = $port/" ${conf}
+    sed -i "s/udp-port = .*/udp-port = $port/" ${conf}
+    
+    echo -e "\033[32m[√]\033[0m 端口已改为: $port"
+    echo -e "\033[33m[提示]\033[0m 请重启VPN使配置生效"
+}
+
+# 查看在线用户
+view_users(){
+    echo "========================================"
+    echo "  在线用户"
+    echo "========================================"
+    if command -v ss >/dev/null 2>&1; then
+        ss -tn | grep ':443 ' | grep -v LISTEN | wc -l
+    else
+        netstat -tn | grep ':443 ' | grep -v LISTEN | wc -l
+    fi
+    echo "用户在线"
+}
+
+# 查看流量统计
+view_traffic(){
+    echo "========================================"
+    echo "  流量统计"
+    echo "========================================"
+    echo "注: 需要启用流量统计功能"
+}
+
+# 重新生成证书
+regen_cert(){
+    echo "========================================"
+    echo "  重新生成证书"
+    echo "========================================"
+    read -p "确定重新生成证书? (y/n): " c
+    [[ $c != "y" ]] && return
+    
+    cd ${conf_file}
+    rm -f server-cert.pem server-key.pem
+    
+    SERVER_IP=$(curl -s https://api.ip.sb 2>/dev/null || curl -s https://ipinfo.io/ip 2>/dev/null)
+    openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=小白" 2>/dev/null
+    chmod 600 server-key.pem
+    
+    echo -e "\033[32m[√]\033[0m 证书已重新生成"
+    echo -e "\033[33m[提示]\033[0m 请重启VPN使新证书生效"
+}
+
+# 查看日志
+view_log(){
+    echo "========================================"
+    echo "  查看日志"
+    echo "========================================"
+    if [[ -f ${log_file} ]]; then
+        tail -50 ${log_file}
+    else
+        echo -e "\033[33m[警告]\033[0m 日志文件不存在"
+        journalctl -u ocserv --no-pager -n 20 2>/dev/null
+    fi
+}
+
+# 修复网络
+fix_network(){
+    echo "========================================"
+    echo "  修复网络"
+    echo "========================================"
+    
+    # 开启IP转发
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+    sed -i '/net.ipv4.ip_forward/d' /etc/sysctl.conf
+    echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+    
+    # 重新配置防火墙
+    config_firewall
+    
+    # 重启VPN
+    stop_ocserv
+    sleep 1
+    start_ocserv
+    
+    echo -e "\033[32m[√]\033[0m 网络修复完成"
 }
 
 detect_sys
