@@ -160,6 +160,22 @@ install_ocserv_yum(){
         if [[ "$ver" == "7" || "$ver" == "8" ]]; then
             echo -e "\033[32m[信息]\033[0m 检测到 CentOS 7/8，安装EPEL..."
             yum install -y epel-release 2>/dev/null
+        # CentOS 7/8 用Vault源
+        if [[ "$ver" == "7" ]] || [[ "$ver" == "8" ]]; then
+            echo -e "\033[32m[信息]\033[0m 配置Vault源..."
+            cat > /etc/yum.repos.d/CentOS-Vault.repo << 'EOF'
+[base]
+name=CentOS-$ver - Base
+baseurl=http://vault.centos.org/$ver.9/BaseOS/x86_64/os/
+gpgcheck=0
+enabled=1
+[appstream]
+name=CentOS-$ver - AppStream
+baseurl=http://vault.centos.org/$ver.9/AppStream/x86_64/os/
+gpgcheck=0
+enabled=1
+EOF
+        fi
             yum install -y ocserv 2>/dev/null
             if command -v ocserv >/dev/null 2>&1; then
                 echo -e "\033[32m[√]\033[0m EPEL安装成功"
@@ -178,6 +194,22 @@ install_ocserv_yum(){
     rm -f /etc/yum.repos.d/CentOS-Base.repo
     yum clean all 2>/dev/null
     yum install -y epel-release 2>/dev/null
+        # CentOS 7/8 用Vault源
+        if [[ "$ver" == "7" ]] || [[ "$ver" == "8" ]]; then
+            echo -e "\033[32m[信息]\033[0m 配置Vault源..."
+            cat > /etc/yum.repos.d/CentOS-Vault.repo << 'EOF'
+[base]
+name=CentOS-$ver - Base
+baseurl=http://vault.centos.org/$ver.9/BaseOS/x86_64/os/
+gpgcheck=0
+enabled=1
+[appstream]
+name=CentOS-$ver - AppStream
+baseurl=http://vault.centos.org/$ver.9/AppStream/x86_64/os/
+gpgcheck=0
+enabled=1
+EOF
+        fi
     yum install -y ocserv 2>/dev/null || dnf install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
         echo -e "\033[32m[√]\033[0m 源1(官方) 成功"
@@ -187,6 +219,22 @@ install_ocserv_yum(){
     # 源2: EPEL
     echo -e "\033[33m[警告]\033[0m 源1失败，尝试源2: EPEL..."
     yum install -y epel-release 2>/dev/null
+        # CentOS 7/8 用Vault源
+        if [[ "$ver" == "7" ]] || [[ "$ver" == "8" ]]; then
+            echo -e "\033[32m[信息]\033[0m 配置Vault源..."
+            cat > /etc/yum.repos.d/CentOS-Vault.repo << 'EOF'
+[base]
+name=CentOS-$ver - Base
+baseurl=http://vault.centos.org/$ver.9/BaseOS/x86_64/os/
+gpgcheck=0
+enabled=1
+[appstream]
+name=CentOS-$ver - AppStream
+baseurl=http://vault.centos.org/$ver.9/AppStream/x86_64/os/
+gpgcheck=0
+enabled=1
+EOF
+        fi
     yum install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
         echo -e "\033[32m[√]\033[0m 源2(EPEL) 成功"
