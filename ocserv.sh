@@ -344,16 +344,28 @@ config_firewall(){
 # 配置nftables
 config_nftables(){
     echo -e "\033[32m[信息]\033[0m 配置 nftables..."
+    
+    # NAT表
     nft add table ip nat 2>/dev/null
     nft add chain ip nat postrouting '{ type nat hook postrouting priority srcnat; }' 2>/dev/null
     nft add rule ip nat postrouting ip saddr 172.16.0.0/22 masquerade 2>/dev/null
+    
+    # Filter表 - INPUT
     nft add table ip filter 2>/dev/null
+    nft add chain ip filter input '{ type filter hook input priority filter; }' 2>/dev/null
+    nft add rule ip filter input tcp dport 443 accept 2>/dev/null
+    nft add rule ip filter input udp dport 443 accept 2>/dev/null
+    nft add rule ip filter input ct state established,related accept 2>/dev/null
+    
+    # Filter表 - FORWARD
     nft add chain ip filter forward '{ type filter hook forward priority filter; }' 2>/dev/null
     nft add rule ip filter forward iifname vpns0 accept 2>/dev/null
     nft add rule ip filter forward oifname vpns0 accept 2>/dev/null
-    nft add rule ip filter input tcp dport 443 accept 2>/dev/null
-    nft add rule ip filter input udp dport 443 accept 2>/dev/null
+    nft add rule ip filter forward ct state established,related accept 2>/dev/null
+    
+    # 持久化
     nft list ruleset > /etc/nftables.conf 2>/dev/null
+    
     echo -e "\033[32m[√]\033[0m nftables 规则已配置"
 }
 
@@ -371,12 +383,27 @@ config_firewalld(){
 # 配置iptables
 config_iptables(){
     echo -e "\033[32m[信息]\033[0m 配置 iptables..."
+    
+    # 开放端口
     iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
     iptables -I INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null
+    
+    # NAT - masquerade (关键!)
     iptables -t nat -A POSTROUTING -s 172.16.0.0/22 -j MASQUERADE 2>/dev/null
+    
+    # 转发规则
     iptables -A FORWARD -i vpns0 -j ACCEPT 2>/dev/null
     iptables -A FORWARD -o vpns0 -j ACCEPT 2>/dev/null
+    iptables -A FORWARD -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+    iptables -A FORWARD -d 172.16.0.0/22 -j ACCEPT 2>/dev/null
+    iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null
+    
+    # 允许VPN网段
+    iptables -A INPUT -s 172.16.0.0/22 -j ACCEPT 2>/dev/null
+    
+    # 持久化
     iptables-save > /etc/sysconfig/iptables 2>/dev/null
+    
     echo -e "\033[32m[√]\033[0m iptables 规则已配置"
 }
 
