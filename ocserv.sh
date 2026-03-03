@@ -84,27 +84,27 @@ install_deps(){
     echo -e "\033[32m[√]\033[0m 依赖安装完成"
 }
 
-# DNF安装 (AlmaLinux 10, CentOS Stream)
+# DNF安装 (AlmaLinux 10, CentOS Stream) - 官方源优先
 install_ocserv_dnf(){
     echo -e "\033[32m[信息]\033[0m 使用 DNF 安装..."
     
-    # 源1: Copr
-    echo -e "\033[32m[信息]\033[0m 尝试源1: Copr..."
-    dnf install -y dnf-plugins-core 2>/dev/null
-    dnf copr enable -y @ocserv/ocserv 2>/dev/null
-    dnf install -y ocserv 2>/dev/null
-    if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源1(Copr) 成功"
-        return
-    fi
-    
-    # 源2: EPEL
-    echo -e "\033[33m[警告]\033[0m 源1失败，尝试源2: EPEL..."
+    # 源1: EPEL (官方额外包)
+    echo -e "\033[32m[信息]\033[0m 尝试源1: EPEL..."
     dnf install -y epel-release 2>/dev/null
     dnf install -y crb 2>/dev/null
     dnf install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源2(EPEL) 成功"
+        echo -e "\033[32m[√]\033[0m 源1(EPEL) 成功"
+        return
+    fi
+    
+    # 源2: Copr
+    echo -e "\033[33m[警告]\033[0m 源1失败，尝试源2: Copr..."
+    dnf install -y dnf-plugins-core 2>/dev/null
+    dnf copr enable -y @ocserv/ocserv 2>/dev/null
+    dnf install -y ocserv 2>/dev/null
+    if command -v ocserv >/dev/null 2>&1; then
+        echo -e "\033[32m[√]\033[0m 源2(Copr) 成功"
         return
     fi
     
@@ -154,8 +154,33 @@ EOF
 install_ocserv_yum(){
     echo -e "\033[32m[信息]\033[0m 使用 YUM 安装..."
     
-    # 源1: 阿里云
-    echo -e "\033[32m[信息]\033[0m 尝试源1: 阿里云..."
+
+# YUM安装 (CentOS 7/8) - 官方源优先
+install_ocserv_yum(){
+    echo -e "\033[32m[信息]\033[0m 使用 YUM 安装..."
+    
+    # 源1: 官方源
+    echo -e "\033[32m[信息]\033[0m 尝试源1: 官方源..."
+    rm -f /etc/yum.repos.d/CentOS-Base.repo
+    yum clean all 2>/dev/null
+    yum install -y epel-release 2>/dev/null
+    yum install -y ocserv 2>/dev/null || dnf install -y ocserv 2>/dev/null
+    if command -v ocserv >/dev/null 2>&1; then
+        echo -e "\033[32m[√]\033[0m 源1(官方) 成功"
+        return
+    fi
+    
+    # 源2: EPEL
+    echo -e "\033[33m[警告]\033[0m 源1失败，尝试源2: EPEL..."
+    yum install -y epel-release 2>/dev/null
+    yum install -y ocserv 2>/dev/null
+    if command -v ocserv >/dev/null 2>&1; then
+        echo -e "\033[32m[√]\033[0m 源2(EPEL) 成功"
+        return
+    fi
+    
+    # 源3: 阿里云
+    echo -e "\033[33m[警告]\033[0m 源2失败，尝试源3: 阿里云..."
     cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
 [base]
 name=CentOS-$releasever - Base
@@ -165,21 +190,16 @@ gpgcheck=0
 name=CentOS-$releasever - Updates
 baseurl=https://mirrors.aliyun.com/centos/$releasever/updates/$basearch/
 gpgcheck=0
-[extras]
-name=CentOS-$releasever - Extras
-baseurl=https://mirrors.aliyun.com/centos/$releasever/extras/$basearch/
-gpgcheck=0
 EOF
     yum clean all 2>/dev/null
-    yum install -y epel-release 2>/dev/null
     yum install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源1(阿里云) 成功"
+        echo -e "\033[32m[√]\033[0m 源3(阿里云) 成功"
         return
     fi
     
-    # 源2: 清华
-    echo -e "\033[33m[警告]\033[0m 源1失败，尝试源2: 清华..."
+    # 源4: 清华
+    echo -e "\033[33m[警告]\033[0m 源3失败，尝试源4: 清华..."
     cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
 [base]
 name=CentOS-$releasever - Base
@@ -191,15 +211,14 @@ baseurl=https://mirrors.tuna.tsinghua.edu.cn/centos/$releasever/updates/$basearc
 gpgcheck=0
 EOF
     yum clean all 2>/dev/null
-    yum install -y epel-release 2>/dev/null
     yum install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源2(清华) 成功"
+        echo -e "\033[32m[√]\033[0m 源4(清华) 成功"
         return
     fi
     
-    # 源3: 网易
-    echo -e "\033[33m[警告]\033[0m 源2失败，尝试源3: 网易..."
+    # 源5: 网易
+    echo -e "\033[33m[警告]\033[0m 源4失败，尝试源5: 网易..."
     cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
 [base]
 name=CentOS-$releasever - Base
@@ -213,31 +232,14 @@ EOF
     yum clean all 2>/dev/null
     yum install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源3(网易) 成功"
+        echo -e "\033[32m[√]\033[0m 源5(网易) 成功"
         return
     fi
     
-    # 源4: 腾讯云
-    echo -e "\033[33m[警告]\033[0m 源3失败，尝试源4: 腾讯云..."
-    cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
-[base]
-name=CentOS-$releasever - Base
-baseurl=https://mirrors.cloud.tencent.com/centos/$releasever/os/$basearch/
-gpgcheck=0
-[updates]
-name=CentOS-$releasever - Updates
-baseurl=https://mirrors.cloud.tencent.com/centos/$releasever/updates/$basearch/
-gpgcheck=0
-EOF
-    yum clean all 2>/dev/null
-    yum install -y ocserv 2>/dev/null
-    if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源4(腾讯云) 成功"
-        return
-    fi
-    
-    # 源5: 华为云
-    echo -e "\033[33m[警告]\033[0m 源4失败，尝试源5: 华为云..."
+    echo -e "\033[31m[错误]\033[0m 安装失败"
+    exit 1
+}
+
     cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
 [base]
 name=CentOS-$releasever - Base
@@ -269,12 +271,25 @@ EOF
     exit 1
 }
 
-# APT安装 (Debian/Ubuntu)
+# APT安装 (Debian/Ubuntu) - 官方源优先
 install_ocserv_apt(){
     echo -e "\033[32m[信息]\033[0m 使用 APT 安装..."
     
-    # 源1: 阿里云
-    echo -e "\033[32m[信息]\033[0m 尝试源1: 阿里云..."
+    # 源1: 官方源
+    echo -e "\033[32m[信息]\033[0m 尝试源1: 官方源..."
+    # 恢复官方源
+    if [[ -f /etc/apt/sources.list.bak ]]; then
+        cp /etc/apt/sources.list.bak /etc/apt/sources.list 2>/dev/null
+    fi
+    apt-get update 2>/dev/null
+    apt-get install -y ocserv 2>/dev/null
+    if command -v ocserv >/dev/null 2>&1; then
+        echo -e "\033[32m[√]\033[0m 源1(官方) 成功"
+        return
+    fi
+    
+    # 源2: 阿里云
+    echo -e "\033[33m[警告]\033[0m 源1失败，尝试源2: 阿里云..."
     if [[ "${release}" == "ubuntu" ]]; then
         cat > /etc/apt/sources.list << 'EOF'
 deb https://mirrors.aliyun.com/ubuntu/ jammy main restricted universe multiverse
@@ -291,12 +306,12 @@ EOF
     apt-get update 2>/dev/null
     apt-get install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源1(阿里云) 成功"
+        echo -e "\033[32m[√]\033[0m 源2(阿里云) 成功"
         return
     fi
     
-    # 源2: 清华
-    echo -e "\033[33m[警告]\033[0m 源1失败，尝试源2: 清华..."
+    # 源3: 清华
+    echo -e "\033[33m[警告]\033[0m 源2失败，尝试源3: 清华..."
     if [[ "${release}" == "ubuntu" ]]; then
         cat > /etc/apt/sources.list << 'EOF'
 deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy main restricted universe multiverse
@@ -313,19 +328,8 @@ EOF
     apt-get update 2>/dev/null
     apt-get install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源2(清华) 成功"
+        echo -e "\033[32m[√]\033[0m 源3(清华) 成功"
         return
-    fi
-    
-    # 源3: 官方
-    echo -e "\033[33m[警告]\033[0m 源2失败，尝试源3: 官方..."
-    if command -v apt >/dev/null 2>&1; then
-        apt-get update 2>/dev/null
-        apt-get install -y ocserv 2>/dev/null
-        if command -v ocserv >/dev/null 2>&1; then
-            echo -e "\033[32m[√]\033[0m 源3(官方) 成功"
-            return
-        fi
     fi
     
     echo -e "\033[31m[错误]\033[0m 安装失败"
