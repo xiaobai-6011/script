@@ -102,33 +102,88 @@ install_deps(){
         fi
     fi
     
-    # 安装防火墙工具
+    # 安装防火墙工具 - 循环尝试直到成功
     echo -e "\033[32m[信息]\033[0m 检查防火墙工具..."
+    FIREWALL_INSTALLED=0
+    
+    # 检查已安装的
     if command -v nft >/dev/null 2>&1; then
         echo -e "\033[32m[√]\033[0m 已有 nftables"
+        FIREWALL_INSTALLED=1
     elif command -v iptables >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 已有的 iptables"
+        echo -e "\033[32m[√]\033[0m 已有 iptables"
+        FIREWALL_INSTALLED=1
     elif command -v firewall-cmd >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 已有的 firewalld"
-    else
+        echo -e "\033[32m[√]\033[0m 已有 firewalld"
+        FIREWALL_INSTALLED=1
+    fi
+    
+    # 如果没有，逐个尝试安装
+    if [[ $FIREWALL_INSTALLED -eq 0 ]]; then
         echo -e "\033[33m[警告]\033[0m 无防火墙工具，正在安装..."
+        
+        # 方法1: nftables (AlmaLinux 10, CentOS Stream 10)
         if command -v dnf >/dev/null 2>&1; then
-            dnf install -y nftables iptables-services 2>/dev/null
-            systemctl enable nftables 2>/dev/null
-        elif command -v yum >/dev/null 2>&1; then
+            echo -e "\033[32m[信息]\033[0m 尝试安装 nftables..."
+            dnf install -y nftables 2>/dev/null
+            if command -v nft >/dev/null 2>&1; then
+                echo -e "\033[32m[√]\033[0m nftables 安装成功"
+                FIREWALL_INSTALLED=1
+            fi
+        fi
+        
+        # 方法2: iptables-services
+        if [[ $FIREWALL_INSTALLED -eq 0 ]] && command -v dnf >/dev/null 2>&1; then
+            echo -e "\033[32m[信息]\033[0m 尝试安装 iptables-services..."
+            dnf install -y iptables-services 2>/dev/null
+            if command -v iptables >/dev/null 2>&1; then
+                echo -e "\033[32m[√]\033[0m iptables 安装成功"
+                FIREWALL_INSTALLED=1
+            fi
+        fi
+        
+        # 方法3: firewalld
+        if [[ $FIREWALL_INSTALLED -eq 0 ]] && command -v dnf >/dev/null 2>&1; then
+            echo -e "\033[32m[信息]\033[0m 尝试安装 firewalld..."
+            dnf install -y firewalld 2>/dev/null
+            if command -v firewall-cmd >/dev/null 2>&1; then
+                echo -e "\033[32m[√]\033[0m firewalld 安装成功"
+                FIREWALL_INSTALLED=1
+            fi
+        fi
+        
+        # 方法4: yum安装iptables
+        if [[ $FIREWALL_INSTALLED -eq 0 ]] && command -v yum >/dev/null 2>&1; then
+            echo -e "\033[32m[信息]\033[0m 尝试 yum 安装 iptables..."
             yum install -y iptables-services 2>/dev/null
-        elif command -v apt >/dev/null 2>&1; then
+            if command -v iptables >/dev/null 2>&1; then
+                echo -e "\033[32m[√]\033[0m iptables 安装成功"
+                FIREWALL_INSTALLED=1
+            fi
+        fi
+        
+        # 方法5: apt安装iptables
+        if [[ $FIREWALL_INSTALLED -eq 0 ]] && command -v apt >/dev/null 2>&1; then
+            echo -e "\033[32m[信息]\033[0m 尝试 apt 安装 iptables..."
             apt install -y iptables 2>/dev/null
+            if command -v iptables >/dev/null 2>&1; then
+                echo -e "\033[32m[√]\033[0m iptables 安装成功"
+                FIREWALL_INSTALLED=1
+            fi
         fi
     fi
     
-    # 确认至少有一个防火墙工具
-    if command -v nft >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 使用 nftables"
-    elif command -v iptables >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 使用 iptables"
+    # 最终确认
+    if [[ $FIREWALL_INSTALLED -eq 1 ]]; then
+        if command -v nft >/dev/null 2>&1; then
+            echo -e "\033[32m[√]\033[0m 将使用: nftables"
+        elif command -v firewall-cmd >/dev/null 2>&1; then
+            echo -e "\033[32m[√]\033[0m 将使用: firewalld"
+        elif command -v iptables >/dev/null 2>&1; then
+            echo -e "\033[32m[√]\033[0m 将使用: iptables"
+        fi
     else
-        echo -e "\033[31m[错误]\033[0m 无可用防火墙工具"
+        echo -e "\033[31m[错误]\033[0m 无法安装防火墙工具"
         exit 1
     fi
     
