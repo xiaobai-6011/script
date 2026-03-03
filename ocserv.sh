@@ -29,6 +29,7 @@ detect_sys(){
     echo "========== 步骤1: 检测系统 =========="
     echo "========================================"
     
+    # 检测系统版本
     if [[ -f /etc/almalinux-release ]]; then
         ver=$(cat /etc/almalinux-release | grep -oP '\d+' | head -1)
         echo -e "\033[32m[信息]\033[0m 检测到: AlmaLinux $ver"
@@ -37,8 +38,16 @@ detect_sys(){
         echo -e "\033[32m[信息]\033[0m 检测到: CentOS Stream"
         release="centos-stream"
     elif [[ -f /etc/redhat-release ]]; then
-        echo -e "\033[32m[信息]\033[0m 检测到: CentOS/RHEL"
-        release="centos"
+        ver=$(cat /etc/redhat-release | grep -oP '\d+' | head -1)
+        echo -e "\033[32m[信息]\033[0m 检测到: CentOS/RHEL $ver"
+        # CentOS 10+ 使用 DNF
+        [[ "$ver" == "10" ]] && release="centos-stream" || release="centos"
+    elif [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        if [[ "$ID" == "centos" ]]; then
+            echo -e "\033[32m[信息]\033[0m 检测到: CentOS $VERSION_ID"
+            [[ "$VERSION_ID" == "10" ]] && release="centos-stream" || release="centos"
+        fi
     elif [[ -f /etc/debian_version ]]; then
         echo -e "\033[32m[信息]\033[0m 检测到: Debian"
         release="debian"
@@ -205,6 +214,54 @@ EOF
     yum install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
         echo -e "\033[32m[√]\033[0m 源3(网易) 成功"
+        return
+    fi
+    
+    # 源4: 腾讯云
+    echo -e "\033[33m[警告]\033[0m 源3失败，尝试源4: 腾讯云..."
+    cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
+[base]
+name=CentOS-$releasever - Base
+baseurl=https://mirrors.cloud.tencent.com/centos/$releasever/os/$basearch/
+gpgcheck=0
+[updates]
+name=CentOS-$releasever - Updates
+baseurl=https://mirrors.cloud.tencent.com/centos/$releasever/updates/$basearch/
+gpgcheck=0
+EOF
+    yum clean all 2>/dev/null
+    yum install -y ocserv 2>/dev/null
+    if command -v ocserv >/dev/null 2>&1; then
+        echo -e "\033[32m[√]\033[0m 源4(腾讯云) 成功"
+        return
+    fi
+    
+    # 源5: 华为云
+    echo -e "\033[33m[警告]\033[0m 源4失败，尝试源5: 华为云..."
+    cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
+[base]
+name=CentOS-$releasever - Base
+baseurl=https://repo.huaweicloud.com/centos/$releasever/os/$basearch/
+gpgcheck=0
+[updates]
+name=CentOS-$releasever - Updates
+baseurl=https://repo.huaweicloud.com/centos/$releasever/updates/$basearch/
+gpgcheck=0
+EOF
+    yum clean all 2>/dev/null
+    yum install -y ocserv 2>/dev/null
+    if command -v ocserv >/dev/null 2>&1; then
+        echo -e "\033[32m[√]\033[0m 源5(华为云) 成功"
+        return
+    fi
+    
+    # 源6: 官方
+    echo -e "\033[33m[警告]\033[0m 源5失败，尝试源6: 官方源..."
+    rm -f /etc/yum.repos.d/CentOS-Base.repo
+    yum clean all 2>/dev/null
+    yum install -y ocserv 2>/dev/null || dnf install -y ocserv 2>/dev/null
+    if command -v ocserv >/dev/null 2>&1; then
+        echo -e "\033[32m[√]\033[0m 源6(官方) 成功"
         return
     fi
     
