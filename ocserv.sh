@@ -86,6 +86,7 @@ install_ocserv_dnf(){
     # 源2: EPEL
     echo -e "\033[33m[警告]\033[0m 源1失败，尝试源2: EPEL..."
     dnf install -y epel-release 2>/dev/null
+    dnf install -y crb 2>/dev/null
     dnf install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
         echo -e "\033[32m[√]\033[0m 源2(EPEL) 成功"
