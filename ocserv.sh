@@ -49,34 +49,6 @@ install_deps(){
         if [[ "${release}" == "centos-stream" ]] || [[ "${release}" == "almalinux10" ]]; then
             echo -e "\033[32m[信息]\033[0m 正在安装 ocserv (CentOS/AlmaLinux)..."
             
-            # 切换到阿里云源 (如果需要)
-            echo -e "\033[32m[信息]\033[0m 检查/切换软件源..."
-            if [[ -f /etc/yum.repos.d/CentOS-Base.repo ]]; then
-                if ! grep -q "mirrors.aliyun.com" /etc/yum.repos.d/CentOS-Base.repo 2>/dev/null; then
-                    echo -e "\033[33m[警告]\033[0m 切换到阿里云源..."
-                    mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
-                    cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
-[base]
-name=CentOS-$releasever - Base
-baseurl=https://mirrors.aliyun.com/centos/$releasever/os/$basearch/
-gpgcheck=0
-enabled=1
-[updates]
-name=CentOS-$releasever - Updates
-baseurl=https://mirrors.aliyun.com/centos/$releasever/updates/$basearch/
-gpgcheck=0
-enabled=1
-[extras]
-name=CentOS-$releasever - Extras
-baseurl=https://mirrors.aliyun.com/centos/$releasever/extras/$basearch/
-gpgcheck=0
-enabled=1
-EOF
-                    dnf clean all 2>/dev/null
-                    echo -e "\033[32m[√]\033[0m 源切换完成"
-                fi
-            fi
-            
             # 方法1: Copr源
             echo -e "\033[32m[信息]\033[0m 方法1: Copr源..."
             dnf install -y dnf-plugins-core 2>/dev/null
@@ -111,28 +83,6 @@ EOF
             
         elif [[ "${release}" == "centos" ]]; then
             echo -e "\033[32m[信息]\033[0m 正在安装 ocserv (CentOS 7/8)..."
-            
-            # 切换到阿里云源
-            if [[ -f /etc/yum.repos.d/CentOS-Base.repo ]]; then
-                if ! grep -q "mirrors.aliyun.com" /etc/yum.repos.d/CentOS-Base.repo 2>/dev/null; then
-                    echo -e "\033[33m[警告]\033[0m 切换到阿里云源..."
-                    mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
-                    cat > /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
-[base]
-name=CentOS-$releasever - Base
-baseurl=https://mirrors.aliyun.com/centos/$releasever/os/$basearch/
-gpgcheck=0
-enabled=1
-[updates]
-name=CentOS-$releasever - Updates
-baseurl=https://mirrors.aliyun.com/centos/$releasever/updates/$basearch/
-gpgcheck=0
-enabled=1
-EOF
-                    yum clean all 2>/dev/null
-                fi
-            fi
-            
             yum install -y epel-release 2>/dev/null
             yum install -y ocserv 2>/dev/null || dnf install -y ocserv 2>/dev/null
             if ! command -v ocserv >/dev/null 2>&1; then
@@ -142,31 +92,6 @@ EOF
             echo -e "\033[32m[√]\033[0m ocserv 安装成功"
         else
             echo -e "\033[32m[信息]\033[0m 正在安装 ocserv (Debian/Ubuntu)..."
-            
-            # 切换到阿里云源
-            if [[ -f /etc/apt/sources.list ]]; then
-                if ! grep -q "mirrors.aliyun.com" /etc/apt/sources.list 2>/dev/null; then
-                    echo -e "\033[33m[警告]\033[0m 切换到阿里云源..."
-                    cp /etc/apt/sources.list /etc/apt/sources.list.bak 2>/dev/null
-                    
-                    if [[ "${release}" == "ubuntu" ]]; then
-                        cat > /etc/apt/sources.list << 'EOF'
-deb https://mirrors.aliyun.com/ubuntu/ jammy main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu/ jammy-updates main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu/ jammy-security main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu/ jammy-backports main restricted universe multiverse
-EOF
-                    else
-                        cat > /etc/apt/sources.list << 'EOF'
-deb https://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian-security/ bookworm-security main contrib non-free non-free-firmware
-EOF
-                    fi
-                    apt-get update 2>/dev/null
-                fi
-            fi
-            
             apt-get update
             apt-get install -y ocserv
             if ! command -v ocserv >/dev/null 2>&1; then
@@ -227,25 +152,6 @@ EOF
             fi
         fi
         
-        # 方法4: yum安装iptables
-        if [[ $FIREWALL_INSTALLED -eq 0 ]] && command -v yum >/dev/null 2>&1; then
-            echo -e "\033[32m[信息]\033[0m 尝试 yum 安装 iptables..."
-            yum install -y iptables-services 2>/dev/null
-            if command -v iptables >/dev/null 2>&1; then
-                echo -e "\033[32m[√]\033[0m iptables 安装成功"
-                FIREWALL_INSTALLED=1
-            fi
-        fi
-        
-        # 方法5: apt安装iptables
-        if [[ $FIREWALL_INSTALLED -eq 0 ]] && command -v apt >/dev/null 2>&1; then
-            echo -e "\033[32m[信息]\033[0m 尝试 apt 安装 iptables..."
-            apt install -y iptables 2>/dev/null
-            if command -v iptables >/dev/null 2>&1; then
-                echo -e "\033[32m[√]\033[0m iptables 安装成功"
-                FIREWALL_INSTALLED=1
-            fi
-        fi
     fi
     
     # 最终确认
