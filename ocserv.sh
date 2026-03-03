@@ -443,7 +443,7 @@ EOF
     cd ${conf_file}
     if [[ ! -f server-cert.pem ]]; then
         SERVER_IP=$(curl -s https://api.ip.sb 2>/dev/null || curl -s https://ipinfo.io/ip 2>/dev/null)
-        openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=小白" 2>/dev/null
+        openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=xiaobai" 2>/dev/null
         chmod 600 server-key.pem
     fi
     
@@ -664,16 +664,62 @@ regen_cert(){
     echo "========================================"
     echo "  重新生成证书"
     echo "========================================"
-    read -p "确定重新生成证书? (y/n): " c
-    [[ $c != "y" ]] && return
     
-    cd ${conf_file}
-    rm -f server-cert.pem server-key.pem
-    
+    # 获取当前IP
     SERVER_IP=$(curl -s https://api.ip.sb 2>/dev/null || curl -s https://ipinfo.io/ip 2>/dev/null)
-    openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=小白" 2>/dev/null
-    chmod 600 server-key.pem
     
+    echo "当前服务器IP: $SERVER_IP"
+    echo "默认组织: xiaobai"
+    echo ""
+    echo "1. 使用默认设置生成"
+    echo "2. 自定义CN (证书名称)"
+    echo "3. 自定义组织名称"
+    echo "0. 返回"
+    read -p "请选择: " c
+    
+    case $c in
+        1)
+            # 默认生成
+            cd ${conf_file}
+            rm -f server-cert.pem server-key.pem
+            openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=xiaobai" 2>/dev/null
+            chmod 600 server-key.pem
+            ;;
+        2)
+            # 自定义CN
+            read -p "输入CN (证书名称/IP): " custom_cn
+            custom_cn=${custom_cn:-$SERVER_IP}
+            cd ${conf_file}
+            rm -f server-cert.pem server-key.pem
+            openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${custom_cn}/O=xiaobai" 2>/dev/null
+            chmod 600 server-key.pem
+            ;;
+        3)
+            # 自定义组织
+            read -p "输入组织名称: " custom_org
+            custom_org=${custom_org:-xiaobai}
+            cd ${conf_file}
+            rm -f server-cert.pem server-key.pem
+            openssl req -newkey rsa:2048 -nodes -keyout server-key.pem -x509 -days 3650 -out server-cert.pem -subj "/CN=${SERVER_IP}/O=${custom_org}" 2>/dev/null
+            chmod 600 server-key.pem
+            ;;
+        0)
+            return
+            ;;
+        *)
+            echo -e "\033[31m[错误]\033[0m 无效选择"
+            return
+            ;;
+    esac
+    
+    # 显示证书信息
+    echo ""
+    echo "========================================"
+    echo "  证书信息"
+    echo "========================================"
+    openssl x509 -in ${conf_file}/server-cert.pem -noout -subject -issuer 2>/dev/null
+    echo "有效期: $(openssl x509 -in ${conf_file}/server-cert.pem -noout -enddate 2>/dev/null)"
+    echo ""
     echo -e "\033[32m[√]\033[0m 证书已重新生成"
     echo -e "\033[33m[提示]\033[0m 请重启VPN使新证书生效"
 }
