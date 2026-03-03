@@ -84,7 +84,7 @@ install_deps(){
     echo -e "\033[32m[√]\033[0m 依赖安装完成"
 }
 
-# DNF安装 (AlmaLinux 10, CentOS Stream) - 6个备用源
+# DNF安装 (AlmaLinux 10, CentOS Stream) - 官方源优先
 install_ocserv_dnf(){
     echo -e "\033[32m[信息]\033[0m 使用 DNF 安装..."
     
@@ -143,44 +143,6 @@ EOF
     dnf install -y ocserv 2>/dev/null
     if command -v ocserv >/dev/null 2>&1; then
         echo -e "\033[32m[√]\033[0m 源4(清华) 成功"
-        return
-    fi
-    
-    # 源5: 腾讯云
-    echo -e "\033[33m[警告]\033[0m 源4失败，尝试源5: 腾讯云..."
-    cat > /etc/yum.repos.d/almalinux.repo << 'EOF'
-[base]
-name=AlmaLinux-$releasever - Base
-baseurl=https://mirrors.cloud.tencent.com/almalinux/$releasever/BaseOS/$basearch/os/
-gpgcheck=0
-[appstream]
-name=AlmaLinux-$releasever - AppStream
-baseurl=https://mirrors.cloud.tencent.com/almalinux/$releasever/AppStream/$basearch/os/
-gpgcheck=0
-EOF
-    dnf clean all 2>/dev/null
-    dnf install -y ocserv 2>/dev/null
-    if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源5(腾讯云) 成功"
-        return
-    fi
-    
-    # 源6: 华为云
-    echo -e "\033[33m[警告]\033[0m 源5失败，尝试源6: 华为云..."
-    cat > /etc/yum.repos.d/almalinux.repo << 'EOF'
-[base]
-name=AlmaLinux-$releasever - Base
-baseurl=https://repo.huaweicloud.com/almalinux/$releasever/BaseOS/$basearch/os/
-gpgcheck=0
-[appstream]
-name=AlmaLinux-$releasever - AppStream
-baseurl=https://repo.huaweicloud.com/almalinux/$releasever/AppStream/$basearch/os/
-gpgcheck=0
-EOF
-    dnf clean all 2>/dev/null
-    dnf install -y ocserv 2>/dev/null
-    if command -v ocserv >/dev/null 2>&1; then
-        echo -e "\033[32m[√]\033[0m 源6(华为云) 成功"
         return
     fi
     
