@@ -154,11 +154,11 @@ EOF
 install_ocserv_yum(){
     echo -e "\033[32m[信息]\033[0m 使用 YUM 安装..."
     
-    # CentOS 7及以下需要EPEL
+    # CentOS 7/8及以下需要EPEL
     if [[ -f /etc/redhat-release ]]; then
         ver=$(cat /etc/redhat-release | grep -oP '\d+' | head -1)
-        if [[ "$ver" == "7" ]]; then
-            echo -e "\033[32m[信息]\033[0m 检测到 CentOS 7，安装EPEL..."
+        if [[ "$ver" == "7" || "$ver" == "8" ]]; then
+            echo -e "\033[32m[信息]\033[0m 检测到 CentOS 7/8，安装EPEL..."
             yum install -y epel-release 2>/dev/null
             yum install -y ocserv 2>/dev/null
             if command -v ocserv >/dev/null 2>&1; then
