@@ -391,6 +391,9 @@ config_ocserv(){
 auth = "plain[${passwd_file}]"
 tcp-port = 443
 udp-port = 443
+socket-file = /var/run/ocserv.socket
+pid-file = /var/run/ocserv.pid
+udp-port = 443
 server-cert = /etc/ocserv/server-cert.pem
 server-key = /etc/ocserv/server-key.pem
 device = vpns
