@@ -172,27 +172,50 @@ EOFTEMPLATE
 config_firewall(){
     echo -e "\033[32m[信息]\033[0m 配置防火墙..."
     
-    # 检测并安装防火墙工具
-    if ! command -v iptables &>/dev/null && ! command -v firewall-cmd &>/dev/null; then
+    # 检测并安装防火墙工具 (兼容各种Linux)
+    if ! command -v iptables &>/dev/null && ! command -v nft &>/dev/null && ! command -v firewall-cmd &>/dev/null; then
         echo -e "\033[33m[警告]\033[0m 未找到防火墙工具，正在安装..."
-        if command -v dnf &>/dev/null; then
-            dnf install -y iptables-services 2>/dev/null
+        if command -v dnf >/dev/null; then
+            dnf install -y iptables-services nftables 2>/dev/null
             systemctl enable iptables 2>/dev/null
-            systemctl start iptables 2>/dev/null
-        elif command -v yum &>/dev/null; then
+            systemctl enable nftables 2>/dev/null
+        elif command -v yum >/dev/null; then
             yum install -y iptables-services 2>/dev/null
             chkconfig iptables on 2>/dev/null
-            service iptables start 2>/dev/null
+        elif command -v apt >/dev/null; then
+            apt install -y iptables 2>/dev/null
         fi
     fi
     
     # 开启IP转发
     echo 1 > /proc/sys/net/ipv4/ip_forward
+    sed -i '/net.ipv4.ip_forward/d' /etc/sysctl.conf 2>/dev/null
     echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf 2>/dev/null
     sysctl -p 2>/dev/null
     
-    # 检测防火墙 - 优先firewalld，然后iptables
-    if command -v firewall-cmd >/dev/null 2>&1; then
+    # 优先使用nftables (AlmaLinux 10, CentOS Stream 10)
+    if command -v nft >/dev/null 2>&1; then
+        echo -e "\033[32m[信息]\033[0m 配置 nftables..."
+        
+        # NAT转发
+        nft add table ip nat 2>/dev/null
+        nft add chain ip nat postrouting '{ type nat hook postrouting priority srcnat; }' 2>/dev/null
+        nft add rule ip nat postrouting ip saddr 172.16.0.0/22 masquerade 2>/dev/null
+        
+        # 转发规则
+        nft add table ip filter 2>/dev/null
+        nft add chain ip filter forward '{ type filter hook forward priority filter; }' 2>/dev/null
+        nft add rule ip filter forward iifname vpns0 accept 2>/dev/null
+        nft add rule ip filter forward oifname vpns0 accept 2>/dev/null
+        nft add rule ip filter forward ct state established,related accept 2>/dev/null
+        
+        # 输入规则
+        nft add chain ip filter input '{ type filter hook input priority filter; }' 2>/dev/null
+        nft add rule ip filter input tcp dport 443 accept 2>/dev/null
+        nft add rule ip filter input udp dport 443 accept 2>/dev/null
+        
+        echo -e "\033[32m[信息]\033[0m nftables 配置完成"
+    elif command -v firewall-cmd >/dev/null 2>&1; then
         echo -e "\033[32m[信息]\033[0m 配置 firewalld..."
         
         # 开放端口
@@ -285,6 +308,13 @@ config_firewall(){
 
 # 启动
 start_ocserv(){
+    # 检查ocserv是否安装
+    if ! command -v ocserv >/dev/null 2>&1; then
+        echo -e "\033[31m[错误]\033[0m ocserv 未安装!"
+        echo -e "\033[33m[提示]\033[0m 请先运行 安装 VPN"
+        return
+    fi
+    
     if [[ -f /var/run/ocserv.pid ]]; then
         echo -e "\033[33m[警告]\033[0m ocserv 已在运行"
         return
